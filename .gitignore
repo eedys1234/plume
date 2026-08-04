@@ -1,0 +1,7 @@
+
+# 업데이터 서명 개인키(절대 커밋 금지)
+src-tauri/plume-update.key
+
+node_modules/
+
+target

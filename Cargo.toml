@@ -1,0 +1,20 @@
+# 워크스페이스 루트: 순수 코어 라이브러리와 Tauri 어댑터를 하위 멤버로 둔다.
+# 도메인 로직(apigen-core)은 Tauri에 의존하지 않으므로 `cargo test -p apigen-core`로
+# WebView/Node 없이 빠르게 검증된다.
+[workspace]
+members = ["crates/apigen-core", "src-tauri"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+# 여러 크레이트가 공유하는 의존성 버전을 한 곳에서 고정한다.
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"          # NOTE: 아카이브됨. 기능은 안정적. 추후 serde_yml/yaml-rust2로 교체 여지.
+openapiv3 = "2"
+thiserror = "1"
+indexmap = { version = "2", features = ["serde"] }

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rustc --version)",
+      "Bash(cargo --version)",
+      "Bash(npm --version)",
+      "Bash(pnpm --version)",
+      "Bash(cargo tauri *)",
+      "Bash(cargo test *)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm approve-builds *)",
+      "Bash(pnpm rebuild *)",
+      "Bash(pnpm build *)",
+      "Bash(pkill -f \"vite preview\")",
+      "Bash(cargo check *)"
+    ]
+  }
+}

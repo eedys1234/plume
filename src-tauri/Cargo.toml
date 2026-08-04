@@ -1,0 +1,27 @@
+[package]
+name = "api-generator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenAPI 3.0 스펙 에디터 · 문서 뷰어 · HTTP 클라이언트 (Tauri)"
+
+# main.rs와 lib.rs를 함께 둔다(Tauri 2 권장 구조: lib에 run(), main은 호출만).
+[lib]
+name = "api_generator_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"       # 네이티브 폴더/파일 선택 다이얼로그
+tauri-plugin-updater = "2"      # 서명 기반 자동 업데이트
+tauri-plugin-process = "2"      # 업데이트 후 재시작(relaunch)
+serde.workspace = true
+serde_json.workspace = true
+# 도메인 로직은 전부 코어에서 가져온다. 이 크레이트는 얇은 IPC 어댑터일 뿐.
+apigen-core = { path = "../crates/apigen-core" }
+
+[dev-dependencies]
+tempfile = "3"

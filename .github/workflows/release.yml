@@ -1,0 +1,86 @@
+# Plume 릴리스: 태그(v*) push 시 Windows/macOS/Linux 설치파일을 빌드해 GitHub Release에 첨부.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {} # 수동 실행도 허용
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest # Apple Silicon
+            args: "--target aarch64-apple-darwin"
+          - platform: macos-latest # Intel
+            args: "--target x86_64-apple-darwin"
+          - platform: ubuntu-22.04
+            args: ""
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install Linux deps
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend deps
+        run: pnpm install
+
+      - name: Build & release (Tauri)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 자동 업데이트 서명(minisign). Repo Secrets에 등록해야 함:
+          #   TAURI_SIGNING_PRIVATE_KEY          : plume-update.key 파일 내용(전체)
+          #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD : 키 생성 시 비밀번호(없으면 빈 값)
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Plume ${{ github.ref_name }}"
+          releaseBody: "설치파일을 내려받아 설치하세요. (Windows: .msi/.exe · macOS: .dmg · Linux: .deb/.AppImage)"
+          releaseDraft: true
+          prerelease: false
+          # 업데이터 매니페스트(latest.json)를 릴리스 자산으로 함께 업로드.
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}
+# 사용법:
+#   1) 최초 1회: 서명키를 Repo Secrets에 등록
+#        - TAURI_SIGNING_PRIVATE_KEY          = src-tauri/plume-update.key 파일 전체 내용
+#        - TAURI_SIGNING_PRIVATE_KEY_PASSWORD = (키 비밀번호, 없으면 빈 값)
+#      그리고 tauri.conf.json의 updater.endpoints의 OWNER/REPO를 실제 값으로 교체.
+#   2) git tag v0.1.0 && git push origin v0.1.0
+#      → 3개 OS 빌드 + 서명된 업데이터 아티팩트(.sig) + latest.json 을 Draft 릴리스에 첨부.
+#   3) 릴리스를 Publish 하면 https://github.com/OWNER/REPO/releases/latest/download/latest.json 이 활성화되어
+#      기존 사용자 앱이 자동으로 새 버전을 감지·설치·재시작.
+# 로컬 단일 빌드: pnpm tauri build  (→ src-tauri/target/release/bundle/)

@@ -1,0 +1,39 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c86ff"/>
+      <stop offset="1" stop-color="#9d7bff"/>
+    </linearGradient>
+    <linearGradient id="feather" x1="0.2" y1="0.1" x2="0.8" y2="0.95">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e6e9ff"/>
+    </linearGradient>
+  </defs>
+  <!-- 라운드 사각 배경 -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <!-- 깃털 -->
+  <g transform="rotate(38 512 512)">
+    <!-- 깃털 외곽(vane) -->
+    <path fill="url(#feather)" d="
+      M512 232
+      C 640 300, 690 430, 690 560
+      C 690 690, 620 800, 512 852
+      C 404 800, 334 690, 334 560
+      C 334 430, 384 300, 512 232 Z"/>
+    <!-- 중앙 깃대(rachis) -->
+    <rect x="502" y="252" width="20" height="612" rx="10" fill="#7c86ff" opacity="0.85"/>
+    <!-- 좌측 갈라짐(barb separations) -->
+    <g stroke="#7c86ff" stroke-width="10" stroke-linecap="round" opacity="0.55">
+      <line x1="512" y1="360" x2="420" y2="410"/>
+      <line x1="512" y1="440" x2="392" y2="500"/>
+      <line x1="512" y1="520" x2="382" y2="590"/>
+      <line x1="512" y1="600" x2="392" y2="675"/>
+      <line x1="512" y1="680" x2="420" y2="748"/>
+      <line x1="512" y1="360" x2="604" y2="410"/>
+      <line x1="512" y1="440" x2="632" y2="500"/>
+      <line x1="512" y1="520" x2="642" y2="590"/>
+      <line x1="512" y1="600" x2="632" y2="675"/>
+      <line x1="512" y1="680" x2="604" y2="748"/>
+    </g>
+  </g>
+</svg>
