@@ -46,6 +46,7 @@ export function Builder() {
     }))
   );
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; key: string; path: string; method: string } | null>(null);
+  const [scriptEdit, setScriptEdit] = useState<{ colId: string; scope: "collection" | "folder"; folder?: string } | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [branch, setBranch] = useState("");
   const [search, setSearch] = useState("");
@@ -145,7 +146,7 @@ export function Builder() {
         { label: "＋ 새 폴더", run: () => { sel(); setDialog({ kind: "newFolder", parent: "" }); } },
         { label: "＋ 새 요청", run: () => { sel(); setDialog({ kind: "newRequest", folder: "" }); } },
         { label: "이름 변경", run: () => { sel(); setDialog({ kind: "renameCollection", current: cspec?.info?.title ?? "" }); } },
-        { label: "⚙ Pre/Post 스크립트", run: () => { sel(); setDialog({ kind: "editScripts", scope: "collection", pre: cspec?.["x-pre-request-script"] ?? "", post: cspec?.["x-post-response-script"] ?? "" }); } },
+        { label: "⚙ Pre/Post 스크립트", run: () => { sel(); setScriptEdit({ colId, scope: "collection" }); } },
       ];
       if (collections.length > 1) items.push({ label: "🗑 이 컬렉션 삭제", run: () => confirm("이 컬렉션을 삭제할까요?") && removeCollection(colId) });
       if (clipboard) items.push({ label: "📋 붙여넣기", run: () => { sel(); pasteInto(""); } });
@@ -159,10 +160,7 @@ export function Builder() {
       ];
       if (clipboard) items.push({ label: "📋 붙여넣기", run: () => { sel(); pasteInto(t.path); } });
       items.push({ label: "이름 변경", run: () => { sel(); setDialog({ kind: "renameFolder", path: t.path, current: t.path.split("/").pop() ?? "" }); } });
-      {
-        const fscripts = cspec?.["x-folder-scripts"]?.[t.path] ?? {};
-        items.push({ label: "⚙ Pre/Post 스크립트", run: () => { sel(); setDialog({ kind: "editScripts", scope: "folder", folder: t.path, pre: fscripts.pre ?? "", post: fscripts.post ?? "" }); } });
-      }
+      items.push({ label: "⚙ Pre/Post 스크립트", run: () => { sel(); setScriptEdit({ colId, scope: "folder", folder: t.path }); } });
       items.push({ label: "삭제", run: () => { sel(); deleteFolder(t.path); } });
       return items;
     }
@@ -331,9 +329,18 @@ export function Builder() {
           </>
         )}
 
-        {/* 활성 요청 뷰 */}
+        {/* 활성 요청 뷰 (컬렉션/폴더 스크립트 편집 중이면 그 패널) */}
         <div className="reqcontent">
-          {active ? (
+          {scriptEdit ? (
+            <ScriptPanel
+              key={`${scriptEdit.colId}:${scriptEdit.scope}:${scriptEdit.folder ?? ""}`}
+              spec={collections.find((c) => c.id === scriptEdit.colId)?.spec}
+              scope={scriptEdit.scope}
+              folder={scriptEdit.folder}
+              onSave={(pre, post) => saveScripts(scriptEdit.scope, scriptEdit.folder, pre, post)}
+              onClose={() => setScriptEdit(null)}
+            />
+          ) : active ? (
             <RequestView key={activeTab} path={active.path} method={active.method} />
           ) : (
             <div className="reqview">
@@ -460,6 +467,39 @@ function TreeDialog({
           <button className="active" onClick={confirmDlg}>확인</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// 컬렉션/폴더 공통 Pre/Post 스크립트 편집 패널(요청 Script 탭과 동일 UI, 모달 아님).
+function ScriptPanel({ spec, scope, folder, onSave, onClose }: {
+  spec: any;
+  scope: "collection" | "folder";
+  folder?: string;
+  onSave: (pre: string, post: string) => void;
+  onClose: () => void;
+}) {
+  const cur = scope === "collection"
+    ? { pre: spec?.["x-pre-request-script"] ?? "", post: spec?.["x-post-response-script"] ?? "" }
+    : (spec?.["x-folder-scripts"]?.[folder ?? ""] ?? { pre: "", post: "" });
+  const [pre, setPre] = useState<string>(cur.pre ?? "");
+  const [post, setPost] = useState<string>(cur.post ?? "");
+  const title = scope === "collection" ? "컬렉션 공통 스크립트" : `폴더 공통 스크립트 · ${folder}`;
+  return (
+    <div className="reqview">
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <h3 style={{ margin: 0 }}>⚙ {title}</h3>
+        <button onClick={onClose}>닫기</button>
+      </div>
+      <p className="hint tiny">공통 요청 전/후 로직. 실행 순서: 컬렉션 → 폴더 → 요청(pre) / 역순(post). (bru·req·res·console 사용, 변경 시 자동 저장)</p>
+      <div className="sublabel">Pre-request Script</div>
+      <textarea rows={9} className="scriptedit" value={pre}
+        onChange={(e) => { setPre(e.target.value); onSave(e.target.value, post); }}
+        placeholder={"// 요청 전 공통 실행\n// 예) req.setHeader('X-Trace', bru.getEnvVar('trace'))"} />
+      <div className="sublabel">Post-response Script</div>
+      <textarea rows={9} className="scriptedit" value={post}
+        onChange={(e) => { setPost(e.target.value); onSave(pre, e.target.value); }}
+        placeholder={"// 응답 후 공통 실행\n// 예) if (res.status === 401) console.error('인증 만료')"} />
     </div>
   );
 }

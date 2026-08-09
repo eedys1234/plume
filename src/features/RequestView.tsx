@@ -771,6 +771,31 @@ export function RequestView({ path, method }: { path: string; method: string }) 
   );
 }
 
+// HTTP 헤더 Key 커스텀 자동완성(네이티브 datalist 대신 테마 드롭다운).
+function HeaderKeyInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const q = (value ?? "").toLowerCase();
+  const matches = HTTP_HEADERS.filter((h) => h.toLowerCase().includes(q) && h.toLowerCase() !== q).slice(0, 8);
+  return (
+    <div className="hdrkey">
+      <input
+        value={value ?? ""}
+        placeholder="헤더 키"
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+      />
+      {open && matches.length > 0 && (
+        <div className="hdrkeylist">
+          {matches.map((h) => (
+            <div key={h} className="hdrkeyitem" onMouseDown={(e) => { e.preventDefault(); onChange(h); setOpen(false); }}>{h}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HeadersEditor({ value, onChange }: { value: any[] | undefined; onChange: (nh: any[]) => void }) {
   const headers = (value ?? []).filter((p: any) => p?.in === "header");
   const set = (i: number, patch: any) => onChange(headers.map((h, j) => (j === i ? { ...h, ...patch } : h)));
@@ -778,17 +803,13 @@ function HeadersEditor({ value, onChange }: { value: any[] | undefined; onChange
   const remove = (i: number) => onChange(headers.filter((_, j) => j !== i));
   return (
     <div className="schemaeditor">
-      {/* HTTP 헤더 자동완성 목록 */}
-      <datalist id="http-header-keys">
-        {HTTP_HEADERS.map((hdr) => <option key={hdr} value={hdr} />)}
-      </datalist>
       <table className="fieldtable">
         <thead><tr><th>Key</th><th>Value</th><th>필수</th><th /></tr></thead>
         <tbody>
           {headers.length === 0 && <tr><td colSpan={4} className="hint">헤더 없음</td></tr>}
           {headers.map((h, i) => (
             <tr key={i}>
-              <td><input list="http-header-keys" value={h.name ?? ""} placeholder="헤더 키" onChange={(e) => set(i, { name: e.target.value })} /></td>
+              <td><HeaderKeyInput value={h.name ?? ""} onChange={(v) => set(i, { name: v })} /></td>
               <td><input value={h.example ?? ""} onChange={(e) => set(i, { example: e.target.value || undefined })} /></td>
               <td className="c"><input type="checkbox" checked={!!h.required} onChange={(e) => set(i, { required: e.target.checked })} /></td>
               <td className="c"><button className="del" onClick={() => remove(i)}>×</button></td>

@@ -62,6 +62,7 @@ export function App() {
   const [showExport, setShowExport] = useState(false);
   const [showDiag, setShowDiag] = useState(false);
   const [showNewWs, setShowNewWs] = useState(false);
+  const [confirmDlg, setConfirmDlg] = useState<{ title: string; message: string; okLabel: string; danger?: boolean; onOk: () => void } | null>(null);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [showUpdate, setShowUpdate] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -235,17 +236,20 @@ export function App() {
     }
   }
 
-  // 워크스페이스 삭제(폴더 제거) — 확인 후. 현재 열린 걸 지우면 다른 워크스페이스로 전환.
-  async function deleteWorkspaceHandler(name: string) {
+  // 워크스페이스 삭제(폴더 제거) — 앱 테마 확인 모달로 물어본 뒤 실행.
+  function deleteWorkspaceHandler(name: string) {
+    setConfirmDlg({
+      title: "워크스페이스 삭제",
+      message: `워크스페이스 '${name}'을(를) 정말 삭제하시겠습니까?\n폴더의 모든 컬렉션·환경·설정이 영구 삭제되며 되돌릴 수 없습니다.`,
+      okLabel: "삭제",
+      danger: true,
+      onOk: () => doDeleteWorkspace(name),
+    });
+  }
+  async function doDeleteWorkspace(name: string) {
     const st = useStore.getState();
     const root = st.projectRoot;
     if (!root) return;
-    const { confirmWarn } = await import("./dialog");
-    const ok = await confirmWarn(
-      `워크스페이스 '${name}'을(를) 정말 삭제하시겠습니까?\n폴더의 모든 컬렉션·환경·설정이 영구 삭제되며 되돌릴 수 없습니다.`,
-      "워크스페이스 삭제"
-    );
-    if (!ok) return;
     try {
       await api.deleteWorkspace(root, name);
       const remaining = (await refreshWorkspaces(root)).filter((w) => w.name !== name);
@@ -430,6 +434,24 @@ export function App() {
             <Suspense fallback={<div className="hint" style={{ padding: 20 }}>로딩 중…</div>}>
               <ExportPanel />
             </Suspense>
+          </div>
+        </div>
+      )}
+
+      {confirmDlg && (
+        <div className="modalbg" onClick={() => setConfirmDlg(null)}>
+          <div className="modal confirmmodal" onClick={(e) => e.stopPropagation()}>
+            <h3>{confirmDlg.title}</h3>
+            <p className="confirmmsg">{confirmDlg.message}</p>
+            <div className="row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8 }}>
+              <button onClick={() => setConfirmDlg(null)}>취소</button>
+              <button
+                className={confirmDlg.danger ? "active danger" : "active"}
+                onClick={() => { const ok = confirmDlg.onOk; setConfirmDlg(null); ok(); }}
+              >
+                {confirmDlg.okLabel}
+              </button>
+            </div>
           </div>
         </div>
       )}
