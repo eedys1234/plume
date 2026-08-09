@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { api } from "./ipc";
 import { pickDirectory } from "./dialog";
 import { LAST_FOLDER_KEY, PROJECT_ROOT_KEY, basename, emptySpec, useStore, type BuilderTab, type Gnb } from "./store";
@@ -6,12 +6,15 @@ import { checkForUpdate, needsUpdate, applyUpdate, CURRENT_VERSION, type UpdateC
 import { ErrorBoundary } from "./features/ErrorBoundary";
 import { Builder } from "./features/Builder";
 import { Docs } from "./features/Docs";
-import { ApiCallChain } from "./features/ApiCallChain";
 import { Load } from "./features/Load";
 import { Environments } from "./features/Environments";
 import { ImportExport } from "./features/ImportExport";
 import { Git } from "./features/Git";
 import { History } from "./features/History";
+
+// 무거운 다이어그램 의존성(mermaid·cytoscape·katex ~1MB)을 지연 로드해 앱 시작을 빠르게.
+// API Call Chain 탭을 처음 열 때만 로드된다.
+const ApiCallChain = lazy(() => import("./features/ApiCallChain").then((m) => ({ default: m.ApiCallChain })));
 
 const LNB: { id: Gnb; label: string; icon: string }[] = [
   { id: "builder", label: "Builder", icon: "📦" },
@@ -331,7 +334,11 @@ export function App() {
             <main className="content">
               <ErrorBoundary key={`${gnb}:${builderTab}`}>
                 {gnb === "builder" && builderTab === "design" && <Builder />}
-                {gnb === "builder" && builderTab === "call" && <ApiCallChain />}
+                {gnb === "builder" && builderTab === "call" && (
+                  <Suspense fallback={<div className="hint" style={{ padding: 20 }}>다이어그램 모듈 로딩 중…</div>}>
+                    <ApiCallChain />
+                  </Suspense>
+                )}
                 {gnb === "builder" && builderTab === "load" && <Load />}
                 {gnb === "builder" && builderTab === "docs" && <Docs />}
                 {gnb === "environment" && <Environments />}
