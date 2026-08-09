@@ -17,8 +17,12 @@ pub struct Environment {
     pub id: String,
     #[serde(default)]
     pub name: String,
+    /// 요청({{var}} 치환)에서 쓰는 변수.
     #[serde(default)]
     pub variables: BTreeMap<String, String>,
+    /// Pre/Post 스크립트에서만 쓰는 변수(요청 치환에는 미사용).
+    #[serde(default, rename = "scriptVariables")]
+    pub script_variables: BTreeMap<String, String>,
 }
 
 /// 한 번의 HTTP 요청 명세.

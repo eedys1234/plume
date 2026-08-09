@@ -94,6 +94,7 @@ interface AppState {
   // 컬렉션 관리
   addCollection: (name: string) => void;
   setActiveCollection: (id: string) => void;
+  moveRequestTo: (srcColId: string, path: string, method: string, dstColId: string, dstFolder: string) => void;
   renameCollection: (id: string, name: string) => void;
   removeCollection: (id: string) => void;
   /** 워크스페이스에서 로드한 컬렉션들로 전체 교체(비면 기본 1개 생성). */
@@ -115,6 +116,8 @@ interface AppState {
   renameEnvironment: (id: string, name: string) => void;
   setVariable: (envId: string, key: string, value: string) => void;
   removeVariable: (envId: string, key: string) => void;
+  setScriptVariable: (envId: string, key: string, value: string) => void;
+  removeScriptVariable: (envId: string, key: string) => void;
 
   // 스크립트 런타임 변수(bru.getVar/setVar, 비영속)
   runtimeVars: Record<string, string>;
@@ -157,6 +160,9 @@ interface AppState {
   openTab: (path: string, method: string) => void;
   closeTab: (path: string, method: string) => void;
   setActiveTab: (key: string) => void;
+  closeAllTabs: () => void;
+  closeOtherTabs: (key: string) => void;
+  closeTabsToSide: (key: string, side: "left" | "right") => void;
 }
 
 export const tabKey = (path: string, method: string) => `${method} ${path}`;
@@ -253,6 +259,36 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({
       collections: s.collections.map((c) => (c.id === id ? { ...c, name } : c)),
     })),
+  // 드래그앤드랍: 요청을 대상 폴더(또는 다른 컬렉션의 폴더)로 이동.
+  moveRequestTo: (srcColId, path, method, dstColId, dstFolder) => {
+    set((s) => {
+      const cols = s.collections.map((c) => ({ ...c }));
+      const src = cols.find((c) => c.id === srcColId);
+      const dst = cols.find((c) => c.id === dstColId);
+      if (!src || !dst) return {};
+      const srcSpec: any = structuredClone(src.spec);
+      const op = srcSpec?.paths?.[path]?.[method];
+      if (!op) return {};
+      if (srcColId === dstColId) {
+        if (dstFolder) op["x-folder"] = dstFolder; else delete op["x-folder"];
+        src.spec = srcSpec;
+      } else {
+        delete srcSpec.paths[path][method];
+        if (Object.keys(srcSpec.paths[path]).length === 0) delete srcSpec.paths[path];
+        src.spec = srcSpec;
+        const dstSpec: any = structuredClone(dst.spec);
+        dstSpec.paths ??= {};
+        dstSpec.paths[path] ??= {};
+        const moved = structuredClone(op);
+        if (dstFolder) moved["x-folder"] = dstFolder; else delete moved["x-folder"];
+        dstSpec.paths[path][method] = moved;
+        dst.spec = dstSpec;
+      }
+      const active = cols.find((c) => c.id === s.activeCollectionId);
+      return { collections: cols, spec: active ? active.spec : s.spec };
+    });
+    void get().revalidate();
+  },
   loadCollections: (cols) => {
     const list: Collection[] =
       cols.length === 0
@@ -340,6 +376,25 @@ export const useStore = create<AppState>((set, get) => ({
     });
     scheduleEnvPersist(get);
   },
+  // 스크립트 전용 변수(scriptVariables) — 요청 치환엔 미사용.
+  setScriptVariable: (envId, key, value) => {
+    set({
+      environments: get().environments.map((e) =>
+        e.id === envId ? { ...e, scriptVariables: { ...(e.scriptVariables ?? {}), [key]: value } } : e
+      ),
+    });
+    scheduleEnvPersist(get);
+  },
+  removeScriptVariable: (envId, key) => {
+    set({
+      environments: get().environments.map((e) => {
+        if (e.id !== envId) return e;
+        const { [key]: _drop, ...rest } = e.scriptVariables ?? {};
+        return { ...e, scriptVariables: rest };
+      }),
+    });
+    scheduleEnvPersist(get);
+  },
 
   runtimeVars: {},
   setRuntimeVar: (key, value) => set((s) => ({ runtimeVars: { ...s.runtimeVars, [key]: value } })),
@@ -412,6 +467,21 @@ export const useStore = create<AppState>((set, get) => ({
     set({ openTabs: tabs, activeTab: active });
   },
   setActiveTab: (key) => set({ activeTab: key }),
+  // 탭 닫기 변형(우클릭 메뉴).
+  closeAllTabs: () => set({ openTabs: [], activeTab: null }),
+  closeOtherTabs: (key) =>
+    set((s) => {
+      const keep = s.openTabs.find((t) => tabKey(t.path, t.method) === key);
+      return { openTabs: keep ? [keep] : [], activeTab: keep ? key : null };
+    }),
+  closeTabsToSide: (key, side) =>
+    set((s) => {
+      const idx = s.openTabs.findIndex((t) => tabKey(t.path, t.method) === key);
+      if (idx < 0) return {};
+      const tabs = side === "left" ? s.openTabs.slice(idx) : s.openTabs.slice(0, idx + 1);
+      const active = tabs.some((t) => tabKey(t.path, t.method) === s.activeTab) ? s.activeTab : key;
+      return { openTabs: tabs, activeTab: active };
+    }),
 
   clipboard: null,
   copyRequest: (path, method) => {

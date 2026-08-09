@@ -94,6 +94,15 @@ pub fn bundle(root: &Path) -> Result<(OpenAPI, Vec<Diagnostic>)> {
     if !proj.x_notes.is_null() {
         spec.extensions.insert("x-notes".to_string(), proj.x_notes);
     }
+    if !proj.x_pre_request_script.is_null() {
+        spec.extensions.insert("x-pre-request-script".to_string(), proj.x_pre_request_script);
+    }
+    if !proj.x_post_response_script.is_null() {
+        spec.extensions.insert("x-post-response-script".to_string(), proj.x_post_response_script);
+    }
+    if !proj.x_folder_scripts.is_null() {
+        spec.extensions.insert("x-folder-scripts".to_string(), proj.x_folder_scripts);
+    }
 
     // 2) components/** → #/components/*
     load_components(root, &mut spec)?;
@@ -381,6 +390,9 @@ pub fn split(root: &Path, spec: &OpenAPI) -> Result<()> {
             .get("x-notes")
             .cloned()
             .unwrap_or(serde_json::Value::Null),
+        x_pre_request_script: spec.extensions.get("x-pre-request-script").cloned().unwrap_or(serde_json::Value::Null),
+        x_post_response_script: spec.extensions.get("x-post-response-script").cloned().unwrap_or(serde_json::Value::Null),
+        x_folder_scripts: spec.extensions.get("x-folder-scripts").cloned().unwrap_or(serde_json::Value::Null),
     };
     write_yaml(&root.join("project.yaml"), &proj)?;
 

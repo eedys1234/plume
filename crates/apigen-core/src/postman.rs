@@ -139,14 +139,13 @@ fn walk_items(items: &[Value], folder: &str, paths: &mut Map<String, Value>, fol
             op["x-folder"] = Value::String(folder.to_string());
         }
 
-        // 충돌 방지: 같은 path+method면 접미사.
-        let mut final_path = path.clone();
-        let mut n = 2;
-        while paths.get(&final_path).and_then(|m| m.get(method.as_str())).is_some() {
-            final_path = format!("{path}-{n}");
-            n += 1;
+        // 같은 path+method면 병합(변형은 named examples 보존).
+        if let Some(existing_op) = paths.get_mut(&path).and_then(|m| m.get_mut(method.as_str())) {
+            let existing_name = existing_op.get("summary").and_then(|s| s.as_str()).unwrap_or("").to_string();
+            crate::bru::merge_operation(existing_op, &op, &existing_name, &name);
+            continue;
         }
-        let entry = paths.entry(final_path).or_insert_with(|| Value::Object(Map::new()));
+        let entry = paths.entry(path).or_insert_with(|| Value::Object(Map::new()));
         if let Value::Object(m) = entry {
             m.insert(method.clone(), op);
         }
@@ -187,7 +186,7 @@ pub fn import_environment(text: &str, id: &str) -> Result<Environment> {
             }
         }
     }
-    Ok(Environment { id: id.to_string(), name, variables })
+    Ok(Environment { id: id.to_string(), name, variables, ..Default::default() })
 }
 
 // ─────────────────────────── Export ───────────────────────────

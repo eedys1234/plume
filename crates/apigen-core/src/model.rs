@@ -60,6 +60,13 @@ pub struct ProjectFile {
         skip_serializing_if = "serde_json::Value::is_null"
     )]
     pub x_notes: serde_json::Value,
+    /// 컬렉션 레벨 Pre/Post 스크립트 + 폴더별 스크립트(공통 요청 로직).
+    #[serde(default, rename = "x-pre-request-script", skip_serializing_if = "serde_json::Value::is_null")]
+    pub x_pre_request_script: serde_json::Value,
+    #[serde(default, rename = "x-post-response-script", skip_serializing_if = "serde_json::Value::is_null")]
+    pub x_post_response_script: serde_json::Value,
+    #[serde(default, rename = "x-folder-scripts", skip_serializing_if = "serde_json::Value::is_null")]
+    pub x_folder_scripts: serde_json::Value,
 }
 
 fn default_openapi_version() -> String {

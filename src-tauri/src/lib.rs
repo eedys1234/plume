@@ -107,6 +107,7 @@ pub fn run() {
             commands::read_text_file,
             commands::list_workspaces,
             commands::rename_workspace,
+            commands::delete_workspace,
             commands::save_workspace_collections,
             commands::load_workspace_collections,
             commands::git_graph,

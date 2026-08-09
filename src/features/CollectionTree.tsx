@@ -39,7 +39,24 @@ export const CollectionTree = memo(function CollectionTree({
   filter?: string;
 }) {
   const storeSpec = useStore((s) => s.spec);
+  const activeColId = useStore((s) => s.activeCollectionId);
+  const moveRequestTo = useStore((s) => s.moveRequestTo);
   const spec = specProp ?? storeSpec;
+  const myColId = collectionId ?? activeColId;
+  const [dragFolder, setDragFolder] = useState<string | null>(null);
+  // 드롭 시 요청을 대상 폴더로 이동.
+  function onDropTo(e: React.DragEvent, folder: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragFolder(null);
+    const raw = e.dataTransfer.getData("application/x-plume-req");
+    if (!raw) return;
+    try {
+      const d = JSON.parse(raw);
+      if (d.col === myColId && (d.folder ?? "") === folder) return; // 제자리
+      moveRequestTo(d.col, d.path, d.method, myColId, folder);
+    } catch { /* 무시 */ }
+  }
   const q = (filter ?? "").toLowerCase().trim();
   // 대형 컬렉션(수백~수천 요청)에서 매 렌더마다 listOperations/buildTree 재계산을 피한다.
   const ops = useMemo(
@@ -84,10 +101,13 @@ export const CollectionTree = memo(function CollectionTree({
           return (
             <div key={f.path}>
               <div
-                className="treerow folder"
+                className={dragFolder === f.path ? "treerow folder dropover" : "treerow folder"}
                 style={{ paddingLeft: depth * 14 }}
                 onClick={() => toggle(f.path)}
                 onContextMenu={(e) => open(e, { kind: "folder", path: f.path })}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragFolder(f.path); }}
+                onDragLeave={() => setDragFolder((cur) => (cur === f.path ? null : cur))}
+                onDrop={(e) => onDropTo(e, f.path)}
               >
                 <span className="caret">{isOpen ? "▾" : "▸"}</span>
                 📁 {f.name}
@@ -99,6 +119,14 @@ export const CollectionTree = memo(function CollectionTree({
         {node.requests.map(({ path, method, op }) => (
           <div
             key={`${method} ${path}`}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(
+                "application/x-plume-req",
+                JSON.stringify({ col: myColId, path, method, folder: op?.["x-folder"] ?? "" })
+              );
+              e.dataTransfer.effectAllowed = "move";
+            }}
             className={
               isActive && selected?.path === path && selected?.method === method
                 ? "treerow request sel"
@@ -120,13 +148,18 @@ export const CollectionTree = memo(function CollectionTree({
   return (
     <div className={isActive ? "collectiontree active" : "collectiontree"}>
       <div
-        className={isActive ? "treerow collection cur" : "treerow collection"}
+        className={
+          (isActive ? "treerow collection cur" : "treerow collection") + (dragFolder === "" ? " dropover" : "")
+        }
         onClick={() => {
           setColOpen((v) => !v);
           if (collectionId && onSelectCollection) onSelectCollection(collectionId);
         }}
         onContextMenu={(e) => open(e, { kind: "collection" })}
-        title="클릭=선택/펼치기 · 우클릭=작업"
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragFolder(""); }}
+        onDragLeave={() => setDragFolder((cur) => (cur === "" ? null : cur))}
+        onDrop={(e) => onDropTo(e, "")}
+        title="클릭=선택/펼치기 · 우클릭=작업 · 요청을 드롭하면 이 컬렉션 루트로 이동"
       >
         <span className="caret">{showTree ? "▾" : "▸"}</span>
         📦 {collectionLabel ?? spec?.info?.title ?? "Collection"}

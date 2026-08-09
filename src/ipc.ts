@@ -40,6 +40,8 @@ export interface Environment {
   id: string;
   name: string;
   variables: Record<string, string>;
+  /** Pre/Post 스크립트 전용 변수(요청 치환에는 미사용). */
+  scriptVariables?: Record<string, string>;
 }
 
 export interface ClientConfig {
@@ -199,6 +201,7 @@ export const api = {
   listWorkspaces: (root: string) => invoke<{ name: string; path: string }[]>("list_workspaces", { root }),
   renameWorkspace: (root: string, oldName: string, newName: string) =>
     invoke<string>("rename_workspace", { root, oldName, newName }),
+  deleteWorkspace: (root: string, name: string) => invoke<void>("delete_workspace", { root, name }),
   saveWorkspaceCollections: (wsDir: string, collections: { name: string; spec: Spec }[]) =>
     invoke<void>("save_workspace_collections", { wsDir, collections }),
   loadWorkspaceCollections: (wsDir: string) =>

@@ -432,6 +432,21 @@ pub fn rename_workspace(root: String, old_name: String, new_name: String) -> Cmd
     Ok(to.to_string_lossy().to_string())
 }
 
+/// 워크스페이스 폴더 삭제(`<root>/<name>` 전체 제거). 되돌릴 수 없음 — 프론트에서 확인 필수.
+#[tauri::command]
+pub fn delete_workspace(root: String, name: String) -> CmdResult<()> {
+    let n = name.trim();
+    if n.is_empty() || n.contains('/') || n.contains('\\') || n.contains("..") {
+        return Err(core::CoreError::Project("올바르지 않은 워크스페이스 이름".into()).into());
+    }
+    let dir = Path::new(&root).join(n);
+    if !dir.is_dir() {
+        return Err(core::CoreError::Project("워크스페이스를 찾을 수 없습니다".into()).into());
+    }
+    std::fs::remove_dir_all(&dir).map_err(|e| core::CoreError::Project(format!("삭제 실패: {e}")))?;
+    Ok(())
+}
+
 /// 텍스트 파일 읽기. 없으면 None(체인 로드 등에서 최초 실행 대응).
 #[tauri::command]
 pub fn read_text_file(path: String) -> CmdResult<Option<String>> {
@@ -614,7 +629,7 @@ mod tests {
         vars.insert("baseUrl".to_string(), "http://x".to_string());
         vars.insert("token".to_string(), "abc".to_string());
         let cfg = ClientConfig {
-            environments: vec![Environment { id: "local".into(), name: "Local".into(), variables: vars }],
+            environments: vec![Environment { id: "local".into(), name: "Local".into(), variables: vars, ..Default::default() }],
             active_environment_id: "local".into(),
         };
         // 1) 환경 저장

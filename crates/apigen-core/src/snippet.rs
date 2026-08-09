@@ -302,7 +302,7 @@ mod tests {
         let mut v = BTreeMap::new();
         v.insert("baseUrl".into(), "https://api.example.com".into());
         v.insert("token".into(), "SECRET".into());
-        Environment { id: "e".into(), name: "E".into(), variables: v }
+        Environment { id: "e".into(), name: "E".into(), variables: v, ..Default::default() }
     }
 
     #[test]

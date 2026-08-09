@@ -398,7 +398,7 @@ pub fn parse_env(input: &str, id: &str, name: &str) -> Environment {
             }
         }
     }
-    Environment { id: id.to_string(), name: name.to_string(), variables }
+    Environment { id: id.to_string(), name: name.to_string(), variables, ..Default::default() }
 }
 
 /// Environment → `vars { }` 블록 원문.
@@ -514,7 +514,7 @@ pub fn export_collection(root: &Path, spec: &OpenAPI) -> Result<PathBuf> {
     fs::create_dir_all(&env_dir)?;
     let mut default_env = std::collections::BTreeMap::new();
     default_env.insert("baseUrl".to_string(), "http://localhost:8080".to_string());
-    let env = Environment { id: "Local".into(), name: "Local".into(), variables: default_env };
+    let env = Environment { id: "Local".into(), name: "Local".into(), variables: default_env, ..Default::default() };
     fs::write(env_dir.join("Local.bru"), serialize_env(&env))?;
 
     let mut seq = 1i64;
@@ -552,6 +552,74 @@ pub struct BruImport {
 }
 
 /// URL에서 경로만 추출. `{{baseUrl}}/x`→`/x`, `http://host/x?q`→`/x`.
+/// 같은 path+method 요청을 기존 오퍼레이션에 병합한다.
+/// - 파라미터: (in+name) 합집합
+/// - 본문: 변형들을 named examples로 보존(경로 중복 없이 데이터 유지)
+pub(crate) fn merge_operation(
+    existing: &mut serde_json::Value,
+    incoming: &serde_json::Value,
+    existing_name: &str,
+    incoming_name: &str,
+) {
+    use serde_json::{json, Map, Value};
+
+    // 1) 파라미터 합집합
+    if let Some(inc_params) = incoming.get("parameters").and_then(|p| p.as_array()) {
+        let mut merged = existing
+            .get("parameters")
+            .and_then(|p| p.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let key_of = |p: &Value| {
+            (
+                p.get("in").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                p.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            )
+        };
+        let mut seen: std::collections::HashSet<(String, String)> = merged.iter().map(key_of).collect();
+        for p in inc_params {
+            let k = key_of(p);
+            if !seen.contains(&k) {
+                seen.insert(k);
+                merged.push(p.clone());
+            }
+        }
+        if !merged.is_empty() {
+            existing.as_object_mut().unwrap().insert("parameters".into(), Value::Array(merged));
+        }
+    }
+
+    // 2) 본문 변형 → named examples 보존
+    let Some(inc_content) = incoming.get("requestBody").and_then(|b| b.get("content")).and_then(|c| c.as_object()) else {
+        return;
+    };
+    for (mt, inc_media) in inc_content {
+        let Some(inc_ex) = inc_media.get("example").cloned() else { continue };
+        let root = existing.as_object_mut().unwrap();
+        let rb = root.entry("requestBody").or_insert_with(|| json!({"content": {}}));
+        let content = rb.as_object_mut().unwrap().entry("content").or_insert_with(|| Value::Object(Map::new()));
+        let media = content.as_object_mut().unwrap().entry(mt.clone()).or_insert_with(|| Value::Object(Map::new()));
+        let media_obj = media.as_object_mut().unwrap();
+        // 기존 단일 example → examples로 승격
+        if let Some(existing_ex) = media_obj.remove("example") {
+            let ex = media_obj.entry("examples").or_insert_with(|| Value::Object(Map::new()));
+            let ex_obj = ex.as_object_mut().unwrap();
+            let nm = if existing_name.is_empty() { "기본".to_string() } else { existing_name.to_string() };
+            ex_obj.entry(nm).or_insert(json!({ "value": existing_ex }));
+        }
+        let ex = media_obj.entry("examples").or_insert_with(|| Value::Object(Map::new()));
+        let ex_obj = ex.as_object_mut().unwrap();
+        let base = if incoming_name.is_empty() { format!("변형{}", ex_obj.len() + 1) } else { incoming_name.to_string() };
+        let mut uk = base.clone();
+        let mut n = 2;
+        while ex_obj.contains_key(&uk) {
+            uk = format!("{base} ({n})");
+            n += 1;
+        }
+        ex_obj.insert(uk, json!({ "value": inc_ex }));
+    }
+}
+
 pub(crate) fn url_to_path(url: &str) -> String {
     let u = url.trim();
     let after = if let Some(idx) = u.rfind("}}") {
@@ -657,6 +725,7 @@ fn parse_yaml_env(text: &str, id: &str) -> Option<Environment> {
         id: id.to_string(),
         name: y.name.unwrap_or_else(|| id.to_string()),
         variables,
+        ..Default::default()
     })
 }
 
@@ -852,19 +921,13 @@ pub fn import_collection(root: &Path) -> Result<BruImport> {
             }
         }
 
-        // 같은 path+method 충돌 시 요청 유실 방지 → path에 접미사(-2,-3…)를 붙여 유니크화.
-        // (Bruno는 동일 URL/메서드 요청을 여러 개 둘 수 있으나 OpenAPI는 하나만 허용)
-        let mut final_path = path.clone();
-        let mut n = 2;
-        while paths
-            .get(&final_path)
-            .and_then(|m| m.get(method.as_str()))
-            .is_some()
-        {
-            final_path = format!("{path}-{n}");
-            n += 1;
+        // 같은 path+method면 경로를 늘리지 않고 기존 오퍼레이션에 병합(변형은 named examples로 보존).
+        if let Some(existing_op) = paths.get_mut(&path).and_then(|m| m.get_mut(method.as_str())) {
+            let existing_name = existing_op.get("summary").and_then(|s| s.as_str()).unwrap_or("").to_string();
+            merge_operation(existing_op, &op, &existing_name, &req.name);
+            continue;
         }
-        let entry = paths.entry(final_path).or_insert_with(|| Value::Object(Map::new()));
+        let entry = paths.entry(path).or_insert_with(|| Value::Object(Map::new()));
         if let Value::Object(m) = entry {
             m.insert(method, op);
         }
@@ -1055,7 +1118,7 @@ paths:
     fn env_roundtrips() {
         let mut vars = BTreeMap::new();
         vars.insert("baseUrl".to_string(), "http://localhost:8080".to_string());
-        let env = Environment { id: "local".into(), name: "Local".into(), variables: vars };
+        let env = Environment { id: "local".into(), name: "Local".into(), variables: vars, ..Default::default() };
         let text = serialize_env(&env);
         assert!(text.contains("vars {"));
         let back = parse_env(&text, "local", "Local");
@@ -1080,20 +1143,24 @@ paths:
         assert!(op.get("requestBody").is_some(), "body 보존");
     }
 
-    // 같은 URL/메서드 요청 2개가 import에서 유실되지 않아야("일부 요청 누락" 버그).
+    // 같은 URL/메서드 요청은 하나로 병합(경로 중복 없음). 본문 변형은 examples로 보존.
     #[test]
-    fn import_collection_keeps_colliding_requests() {
+    fn import_collection_merges_colliding_requests() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("bruno.json"), r#"{"name":"C","version":"1"}"#).unwrap();
-        fs::write(dir.path().join("a.bru"), "meta {\n  name: Login OK\n}\n\npost {\n  url: {{baseUrl}}/login\n}\n").unwrap();
-        fs::write(dir.path().join("b.bru"), "meta {\n  name: Login Fail\n}\n\npost {\n  url: {{baseUrl}}/login\n}\n").unwrap();
+        // 본문(body)이 다른 두 요청 → 한 경로로 병합되고 examples 2개.
+        fs::write(dir.path().join("a.bru"), "meta {\n  name: Login OK\n}\n\npost {\n  url: {{baseUrl}}/login\n  body: json\n}\n\nbody:json {\n  {\"ok\":1}\n}\n").unwrap();
+        fs::write(dir.path().join("b.bru"), "meta {\n  name: Login Fail\n}\n\npost {\n  url: {{baseUrl}}/login\n  body: json\n}\n\nbody:json {\n  {\"ok\":0}\n}\n").unwrap();
 
         let imported = import_collection(dir.path()).unwrap();
         let paths = imported.spec.get("paths").and_then(|p| p.as_object()).unwrap();
-        let login_posts = paths
-            .iter()
-            .filter(|(k, v)| k.starts_with("/login") && v.get("post").is_some())
-            .count();
-        assert_eq!(login_posts, 2, "충돌한 두 요청이 모두 보존돼야(유실 없음)");
+        // 경로 중복(-2) 없이 /login 하나만.
+        let login_paths = paths.keys().filter(|k| k.starts_with("/login")).count();
+        assert_eq!(login_paths, 1, "충돌 요청은 한 경로로 병합돼야");
+        // 두 변형이 named examples로 보존.
+        let examples = paths["/login"]["post"]["requestBody"]["content"]["application/json"]["examples"]
+            .as_object()
+            .expect("examples 보존");
+        assert_eq!(examples.len(), 2, "본문 변형 2개가 examples로 보존");
     }
 }

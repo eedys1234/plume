@@ -57,10 +57,31 @@ function CopyIcon() {
   );
 }
 
+// 모든 컬렉션 path를 합친 "전체 문서" 스펙.
+function mergeSpecs(cols: { name: string; spec: any }[]): any {
+  const paths: any = {};
+  const folders = new Set<string>();
+  for (const c of cols) {
+    const cs = c.spec ?? {};
+    for (const p of Object.keys(cs.paths ?? {})) paths[p] = { ...(paths[p] ?? {}), ...cs.paths[p] };
+    for (const f of cs["x-folders"] ?? []) folders.add(f);
+  }
+  return { openapi: "3.0.3", info: { title: "전체 API 문서", version: "1.0.0" }, paths, "x-folders": [...folders] };
+}
+
 export function Docs() {
-  const { spec, projectDir, updateSpec } = useStore(
-    useShallow((s) => ({ spec: s.spec, projectDir: s.projectDir, updateSpec: s.updateSpec }))
+  const { spec, projectDir, updateSpec, collections, activeCollectionId } = useStore(
+    useShallow((s) => ({
+      spec: s.spec, projectDir: s.projectDir, updateSpec: s.updateSpec,
+      collections: s.collections, activeCollectionId: s.activeCollectionId,
+    }))
   );
+  // 문서 대상: 특정 컬렉션 또는 "전체(모든 컬렉션 병합)".
+  const [docSource, setDocSource] = useState<string>(activeCollectionId || "all");
+  const docSpec: any =
+    docSource === "all"
+      ? mergeSpecs(collections)
+      : collections.find((c) => c.id === docSource)?.spec ?? spec;
   // 노트: [{id, body, createdAt}] 배열. 과거 문자열 형식은 단일 노트로 이관.
   const rawNotes = (spec as any)?.["x-notes"];
   const notes: Note[] = Array.isArray(rawNotes)
@@ -113,33 +134,33 @@ export function Docs() {
   useEffect(() => {
     if (view !== "markdown") return;
     api
-      .specToMarkdown(spec, inclEx, inclSchema)
+      .specToMarkdown(docSpec, inclEx, inclSchema)
       .then((m) => { setMd(m); setMsg(""); })
       .catch(() => setMsg("미리보기는 데스크톱 앱에서 표시됩니다"));
-  }, [spec, view, inclEx, inclSchema]);
+  }, [docSpec, view, inclEx, inclSchema]);
 
-  const hasPaths = Object.keys(spec?.paths ?? {}).length > 0;
+  const hasPaths = Object.keys(docSpec?.paths ?? {}).length > 0;
 
   // Redoc: spec을 임베드한 HTML을 iframe srcdoc으로. (오프라인 배포 시 로컬 번들로 교체)
   const redocDoc = useMemo(() => {
-    const json = JSON.stringify(spec).replace(/</g, "\\u003c");
+    const json = JSON.stringify(docSpec).replace(/</g, "\\u003c");
     return `<!doctype html><html><head><meta charset="utf-8"/>
 <style>body{margin:0}</style></head><body><div id="redoc"></div>
 <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
 <script>Redoc.init(${json}, {}, document.getElementById('redoc'));</script>
 </body></html>`;
-  }, [spec]);
+  }, [docSpec]);
 
   // Swagger UI: 내장 "Try it out" 제공. (브라우저 fetch라 대상 API의 CORS 필요 — CORS-free 호출은 Call 탭)
   const swaggerDoc = useMemo(() => {
-    const json = JSON.stringify(spec).replace(/</g, "\\u003c");
+    const json = JSON.stringify(docSpec).replace(/</g, "\\u003c");
     return `<!doctype html><html><head><meta charset="utf-8"/>
 <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css"/>
 <style>body{margin:0}</style></head><body><div id="swagger"></div>
 <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
 <script>window.ui = SwaggerUIBundle({ spec: ${json}, dom_id: '#swagger', tryItOutEnabled: true });</script>
 </body></html>`;
-  }, [spec]);
+  }, [docSpec]);
 
   const [busy, setBusy] = useState<"" | "html" | "pages">("");
 
@@ -148,13 +169,13 @@ export function Docs() {
 
   // 자체 완결(인라인) 단일 HTML 내보내기 — 어디서든 오프라인으로 열림.
   async function exportHtml() {
-    const name = `${(spec?.info?.title || "api-docs").replace(/[^\w.-]+/g, "-")}-${viewer}.html`;
+    const name = `${(docSpec?.info?.title || "api-docs").replace(/[^\w.-]+/g, "-")}-${viewer}.html`;
     const dest = await pickSavePath(name, "html");
     if (!dest) return;
     setBusy("html");
     setMsg("");
     try {
-      const path = await api.exportStandaloneHtml(dest, spec, viewer);
+      const path = await api.exportStandaloneHtml(dest, docSpec, viewer);
       setMsg(`저장됨(${viewer}): ${path} — 더블클릭하면 인터넷 없이 열립니다`);
     } catch (e: any) {
       setMsg(`오류: ${e?.message ?? e}`);
@@ -187,7 +208,7 @@ export function Docs() {
     }
     setMsg(`${viewer} 배포 중… (docs 생성 → 커밋 → 푸시)`);
     try {
-      const log = await api.publishGithubPages(projectDir, spec, `docs: update ${viewer} API docs`, viewer);
+      const log = await api.publishGithubPages(projectDir, docSpec, `docs: update ${viewer} API docs`, viewer);
       setMsg(log);
     } catch (e: any) {
       setMsg(`배포 실패: ${e?.message ?? e}`);
@@ -199,6 +220,12 @@ export function Docs() {
   return (
     <div className="docs">
       <div className="docbar">
+        <select value={docSource} onChange={(e) => setDocSource(e.target.value)} title="문서 대상 컬렉션">
+          <option value="all">전체 (모든 컬렉션)</option>
+          {collections.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
         <button className={view === "markdown" ? "active" : ""} onClick={() => setView("markdown")}>
           Markdown
         </button>

@@ -1,6 +1,6 @@
 // F1: Bruno식 요청 중심 Builder.
 // 좌: CollectionTree(우클릭 메뉴) / 우: 브레드크럼 + 요청 탭(multi-open) + RequestView.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../ipc";
 import { tabKey, useStore, type Target } from "../store";
 import { useShallow } from "zustand/react/shallow";
@@ -18,7 +18,8 @@ type Dialog =
   | { kind: "renameFolder"; path: string; current: string }
   | { kind: "renameCollection"; current: string }
   | { kind: "renameRequest"; path: string; method: string; current: string }
-  | { kind: "changeRequestPath"; path: string; method: string };
+  | { kind: "changeRequestPath"; path: string; method: string }
+  | { kind: "editScripts"; scope: "collection" | "folder"; folder?: string; pre: string; post: string };
 
 function remap(f: string, oldP: string, newP: string): string {
   if (f === oldP) return newP;
@@ -31,7 +32,7 @@ export function Builder() {
     spec, updateSpec, diagnostics, clipboard, copyRequest, copyFolder, pasteInto,
     collections, activeCollectionId, setActiveCollection, addCollection, removeCollection,
     environments, activeEnvId, setActiveEnv,
-    openTabs, activeTab, openTab, closeTab, setActiveTab, projectDir, logEvent,
+    openTabs, activeTab, openTab, closeTab, setActiveTab, closeAllTabs, closeOtherTabs, closeTabsToSide, projectDir, logEvent,
   } = useStore(
     useShallow((s) => ({
       spec: s.spec, updateSpec: s.updateSpec, diagnostics: s.diagnostics, clipboard: s.clipboard,
@@ -40,9 +41,11 @@ export function Builder() {
       addCollection: s.addCollection, removeCollection: s.removeCollection,
       environments: s.environments, activeEnvId: s.activeEnvId, setActiveEnv: s.setActiveEnv,
       openTabs: s.openTabs, activeTab: s.activeTab, openTab: s.openTab, closeTab: s.closeTab,
-      setActiveTab: s.setActiveTab, projectDir: s.projectDir, logEvent: s.logEvent,
+      setActiveTab: s.setActiveTab, closeAllTabs: s.closeAllTabs, closeOtherTabs: s.closeOtherTabs, closeTabsToSide: s.closeTabsToSide,
+      projectDir: s.projectDir, logEvent: s.logEvent,
     }))
   );
+  const [tabMenu, setTabMenu] = useState<{ x: number; y: number; key: string; path: string; method: string } | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [branch, setBranch] = useState("");
   const [search, setSearch] = useState("");
@@ -50,6 +53,7 @@ export function Builder() {
   const [showEnv, setShowEnv] = useState(false);
   const activeEnv = environments.find((e) => e.id === activeEnvId);
   const [navW, setNavW] = usePersistedSize("plume:builderNavW", 280, 180, 620);
+  const reqtabsRef = useRef<HTMLDivElement>(null);
 
   // 브레드크럼용 git 브랜치(있으면).
   useEffect(() => {
@@ -141,6 +145,7 @@ export function Builder() {
         { label: "＋ 새 폴더", run: () => { sel(); setDialog({ kind: "newFolder", parent: "" }); } },
         { label: "＋ 새 요청", run: () => { sel(); setDialog({ kind: "newRequest", folder: "" }); } },
         { label: "이름 변경", run: () => { sel(); setDialog({ kind: "renameCollection", current: cspec?.info?.title ?? "" }); } },
+        { label: "⚙ Pre/Post 스크립트", run: () => { sel(); setDialog({ kind: "editScripts", scope: "collection", pre: cspec?.["x-pre-request-script"] ?? "", post: cspec?.["x-post-response-script"] ?? "" }); } },
       ];
       if (collections.length > 1) items.push({ label: "🗑 이 컬렉션 삭제", run: () => confirm("이 컬렉션을 삭제할까요?") && removeCollection(colId) });
       if (clipboard) items.push({ label: "📋 붙여넣기", run: () => { sel(); pasteInto(""); } });
@@ -154,6 +159,10 @@ export function Builder() {
       ];
       if (clipboard) items.push({ label: "📋 붙여넣기", run: () => { sel(); pasteInto(t.path); } });
       items.push({ label: "이름 변경", run: () => { sel(); setDialog({ kind: "renameFolder", path: t.path, current: t.path.split("/").pop() ?? "" }); } });
+      {
+        const fscripts = cspec?.["x-folder-scripts"]?.[t.path] ?? {};
+        items.push({ label: "⚙ Pre/Post 스크립트", run: () => { sel(); setDialog({ kind: "editScripts", scope: "folder", folder: t.path, pre: fscripts.pre ?? "", post: fscripts.post ?? "" }); } });
+      }
       items.push({ label: "삭제", run: () => { sel(); deleteFolder(t.path); } });
       return items;
     }
@@ -164,6 +173,26 @@ export function Builder() {
       { label: "복사", run: () => { sel(); copyRequest(t.path, t.method); } },
       { label: "삭제", run: () => { sel(); deleteRequest(t.path, t.method); } },
     ];
+  }
+
+  // 컬렉션/폴더 Pre·Post 스크립트 저장. 컬렉션=루트 x-*-script, 폴더=x-folder-scripts[path].
+  function saveScripts(scope: "collection" | "folder", folder: string | undefined, pre: string, post: string) {
+    updateSpec((d: any) => {
+      if (scope === "collection") {
+        if (pre.trim()) d["x-pre-request-script"] = pre; else delete d["x-pre-request-script"];
+        if (post.trim()) d["x-post-response-script"] = post; else delete d["x-post-response-script"];
+      } else if (folder) {
+        d["x-folder-scripts"] ??= {};
+        const entry: any = {};
+        if (pre.trim()) entry.pre = pre;
+        if (post.trim()) entry.post = post;
+        if (Object.keys(entry).length) d["x-folder-scripts"][folder] = entry;
+        else {
+          delete d["x-folder-scripts"][folder];
+          if (Object.keys(d["x-folder-scripts"]).length === 0) delete d["x-folder-scripts"];
+        }
+      }
+    });
   }
 
   const active = openTabs.find((t) => tabKey(t.path, t.method) === activeTab);
@@ -261,20 +290,46 @@ export function Builder() {
           </span>
         </div>
 
-        {/* 요청 탭 */}
-        <div className="reqtabs">
-          {openTabs.map((t) => {
-            const k = tabKey(t.path, t.method);
-            return (
-              <div key={k} className={k === activeTab ? "reqtab active" : "reqtab"} onClick={() => setActiveTab(k)} title={t.path}>
-                <span className={`m m-${t.method}`}>{t.method.toUpperCase()}</span>
-                <span className="tpath">{spec?.paths?.[t.path]?.[t.method]?.summary || t.path}</span>
-                <span className="tclose" onClick={(e) => { e.stopPropagation(); closeTab(t.path, t.method); }}>×</span>
-              </div>
-            );
-          })}
-          {openTabs.length === 0 && <span className="hint tiny" style={{ padding: "8px 12px" }}>트리에서 요청을 클릭해 탭으로 여세요</span>}
+        {/* 요청 탭 (넘치면 ‹ › 로 스크롤) */}
+        <div className="reqtabsbar">
+          {openTabs.length > 0 && (
+            <button className="tabscroll" title="왼쪽으로" onClick={() => reqtabsRef.current?.scrollBy({ left: -260, behavior: "smooth" })}>‹</button>
+          )}
+          <div className="reqtabs" ref={reqtabsRef}>
+            {openTabs.map((t) => {
+              const k = tabKey(t.path, t.method);
+              return (
+                <div
+                  key={k}
+                  className={k === activeTab ? "reqtab active" : "reqtab"}
+                  onClick={() => setActiveTab(k)}
+                  onContextMenu={(e) => { e.preventDefault(); setTabMenu({ x: e.clientX, y: e.clientY, key: k, path: t.path, method: t.method }); }}
+                  title={t.path}
+                >
+                  <span className={`m m-${t.method}`}>{t.method.toUpperCase()}</span>
+                  <span className="tpath">{spec?.paths?.[t.path]?.[t.method]?.summary || t.path}</span>
+                  <span className="tclose" onClick={(e) => { e.stopPropagation(); closeTab(t.path, t.method); }}>×</span>
+                </div>
+              );
+            })}
+            {openTabs.length === 0 && <span className="hint tiny" style={{ padding: "8px 12px" }}>트리에서 요청을 클릭해 탭으로 여세요</span>}
+          </div>
+          {openTabs.length > 0 && (
+            <button className="tabscroll" title="오른쪽으로" onClick={() => reqtabsRef.current?.scrollBy({ left: 260, behavior: "smooth" })}>›</button>
+          )}
         </div>
+        {tabMenu && (
+          <>
+            <div className="ctxoverlay" onClick={() => setTabMenu(null)} onContextMenu={(e) => { e.preventDefault(); setTabMenu(null); }} />
+            <div className="ctxmenu" style={{ left: tabMenu.x, top: tabMenu.y }}>
+              <button onClick={() => { closeTab(tabMenu.path, tabMenu.method); setTabMenu(null); }}>닫기</button>
+              <button onClick={() => { closeOtherTabs(tabMenu.key); setTabMenu(null); }}>다른 탭 닫기</button>
+              <button onClick={() => { closeTabsToSide(tabMenu.key, "left"); setTabMenu(null); }}>왼쪽 탭 닫기</button>
+              <button onClick={() => { closeTabsToSide(tabMenu.key, "right"); setTabMenu(null); }}>오른쪽 탭 닫기</button>
+              <button className="danger" onClick={() => { closeAllTabs(); setTabMenu(null); }}>모든 탭 닫기</button>
+            </div>
+          </>
+        )}
 
         {/* 활성 요청 뷰 */}
         <div className="reqcontent">
@@ -309,6 +364,7 @@ export function Builder() {
           onSetRequestName={setRequestName}
           onMoveRequest={moveRequest}
           onNewCollection={(nm) => addCollection(nm)}
+          onSaveScripts={saveScripts}
         />
       )}
     </div>
@@ -316,7 +372,7 @@ export function Builder() {
 }
 
 function TreeDialog({
-  dialog, onClose, onFolder, onRequest, onRename, onRenameCollection, onSetRequestName, onMoveRequest, onNewCollection,
+  dialog, onClose, onFolder, onRequest, onRename, onRenameCollection, onSetRequestName, onMoveRequest, onNewCollection, onSaveScripts,
 }: {
   dialog: Dialog;
   onClose: () => void;
@@ -327,7 +383,11 @@ function TreeDialog({
   onSetRequestName: (path: string, method: string, name: string) => void;
   onMoveRequest: (oldPath: string, oldMethod: string, newMethod: string, newPath: string) => void;
   onNewCollection: (name: string) => void;
+  onSaveScripts: (scope: "collection" | "folder", folder: string | undefined, pre: string, post: string) => void;
 }) {
+  const isScripts = dialog.kind === "editScripts";
+  const [preS, setPreS] = useState(isScripts ? dialog.pre : "");
+  const [postS, setPostS] = useState(isScripts ? dialog.post : "");
   const nameForms = dialog.kind === "renameFolder" || dialog.kind === "renameCollection" || dialog.kind === "renameRequest" || dialog.kind === "newCollection";
   const changePath = dialog.kind === "changeRequestPath";
   const [name, setName] = useState(nameForms && "current" in dialog ? (dialog as any).current : "");
@@ -336,7 +396,8 @@ function TreeDialog({
   const [summary, setSummary] = useState("");
 
   function confirmDlg() {
-    if (dialog.kind === "newCollection" && name.trim()) onNewCollection(name.trim());
+    if (dialog.kind === "editScripts") onSaveScripts(dialog.scope, dialog.folder, preS, postS);
+    else if (dialog.kind === "newCollection" && name.trim()) onNewCollection(name.trim());
     else if (dialog.kind === "newFolder" && name.trim()) onFolder(dialog.parent, name.trim());
     else if (dialog.kind === "renameFolder" && name.trim()) onRename(dialog.path, name.trim());
     else if (dialog.kind === "renameCollection" && name.trim()) onRenameCollection(name.trim());
@@ -346,7 +407,8 @@ function TreeDialog({
     onClose();
   }
   const title =
-    dialog.kind === "newCollection" ? "📦 새 컬렉션"
+    dialog.kind === "editScripts" ? (dialog.scope === "collection" ? "⚙ 컬렉션 Pre/Post 스크립트" : `⚙ 폴더 스크립트 · ${dialog.folder}`)
+    : dialog.kind === "newCollection" ? "📦 새 컬렉션"
     : dialog.kind === "newFolder" ? `새 폴더 · 위치: ${dialog.parent || "(루트)"}`
     : dialog.kind === "renameFolder" ? "폴더 이름 변경"
     : dialog.kind === "renameCollection" ? "컬렉션 이름 변경"
@@ -363,9 +425,19 @@ function TreeDialog({
 
   return (
     <div className="modalbg" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={isScripts ? { minWidth: 520 } : undefined}>
         <h3>{title}</h3>
-        {methodPathForm ? (
+        {isScripts ? (
+          <>
+            <p className="hint tiny">공통 요청 전/후 로직. 실행 순서: 컬렉션 → 폴더 → 요청(pre) / 역순(post). (bru·req·res·console 사용)</p>
+            <div className="sublabel">Pre-request Script</div>
+            <textarea rows={5} className="scriptedit" value={preS} onChange={(e) => setPreS(e.target.value)}
+              placeholder={"// 요청 전 공통 실행\n// 예) req.setHeader('X-Trace', bru.getEnvVar('trace'))"} />
+            <div className="sublabel">Post-response Script</div>
+            <textarea rows={5} className="scriptedit" value={postS} onChange={(e) => setPostS(e.target.value)}
+              placeholder={"// 응답 후 공통 실행\n// 예) if (res.status === 401) console.error('인증 만료')"} />
+          </>
+        ) : methodPathForm ? (
           <>
             <div className="row">
               <select value={method} onChange={(e) => setMethod(e.target.value)}>

@@ -198,9 +198,16 @@ export function RequestView({ path, method }: { path: string; method: string }) 
     p = p.split("?")[0].split("#")[0];
     return p.startsWith("/") ? p : null;
   }
-  // URL 입력 blur 시 경로 동기화.
+  // URL 입력 blur 시: 전체 URL(베이스 변수 포함)을 오퍼레이션에 저장 + 경로 동기화.
+  // → {{baseUrl}}→{{coloAppServerUrl}} 같은 변경이 재마운트 후에도 유지된다.
   function syncPathFromUrl() {
     const np = extractPath(sendUrl);
+    const defaultUrl = `{{baseUrl}}${np ?? path}`;
+    // 기본 템플릿과 다르면 x-send-url로 보존, 같으면 제거(깔끔 유지). op와 함께 이동됨.
+    edit((o) => {
+      if (sendUrl && sendUrl !== defaultUrl) o["x-send-url"] = sendUrl;
+      else delete o["x-send-url"];
+    });
     if (np && np !== path) changePath(np);
   }
 
@@ -209,10 +216,25 @@ export function RequestView({ path, method }: { path: string; method: string }) 
   const example0 = op?.requestBody?.content?.[mt0]?.example;
   const [bodyText, setBodyText] = useState(example0 !== undefined ? JSON.stringify(example0, null, 2) : "");
   const [sub, setSub] = useState<Sub>("params");
-  const [sendUrl, setSendUrl] = useState(`{{baseUrl}}${path}`);
-  const [auth, setAuth] = useState<{ kind: "none" | "bearer" | "basic"; token: string; username: string; password: string }>({
+  const [sendUrl, setSendUrl] = useState<string>(op?.["x-send-url"] ?? `{{baseUrl}}${path}`);
+  // auth는 op의 x-auth에 저장·복원되어 재마운트/저장 후에도 유지된다.
+  const [auth, setAuth] = useState<{
+    kind: "none" | "bearer" | "basic" | "apikey";
+    token: string; username: string; password: string;
+    apiKeyName: string; apiKeyValue: string; apiKeyIn: "header" | "query";
+  }>(() => ({
     kind: "none", token: "{{token}}", username: "", password: "",
-  });
+    apiKeyName: "", apiKeyValue: "", apiKeyIn: "header",
+    ...(op?.["x-auth"] ?? {}),
+  }));
+  // auth 변경 시 op에 저장(none이면 제거).
+  function updateAuth(next: typeof auth) {
+    setAuth(next);
+    edit((o: any) => {
+      if (next.kind === "none") delete o["x-auth"];
+      else o["x-auth"] = next;
+    });
+  }
   const [resp, setResp] = useState<HttpResponse | null>(null);
   const [dlExt, setDlExt] = useState("");
   const [busy, setBusy] = useState(false);
@@ -312,8 +334,30 @@ export function RequestView({ path, method }: { path: string; method: string }) 
     const authSpec: AuthSpec =
       auth.kind === "bearer" ? { kind: "bearer", token: auth.token }
       : auth.kind === "basic" ? { kind: "basic", username: auth.username, password: auth.password }
+      : auth.kind === "apikey" ? { kind: "apikey", in: auth.apiKeyIn, name: auth.apiKeyName, value: auth.apiKeyValue }
       : { kind: "none" };
     return { method: method.toUpperCase(), url: sendUrl, headers: h, query: q, body, auth: authSpec };
+  }
+
+  // 컬렉션·폴더·요청 스크립트를 실행 순서대로 모은다.
+  // pre: 컬렉션 → 폴더(부모→자식) → 요청 / post: 요청 → 폴더(자식→부모) → 컬렉션.
+  function gatherScripts(): { pres: string[]; posts: string[] } {
+    const pres: string[] = [];
+    const posts: string[] = [];
+    const fs: any = (spec as any)?.["x-folder-scripts"] ?? {};
+    const folder = op?.["x-folder"];
+    const chain: string[] = [];
+    if (typeof folder === "string" && folder) {
+      let acc = "";
+      for (const seg of folder.split("/").filter(Boolean)) { acc = acc ? `${acc}/${seg}` : seg; chain.push(acc); }
+    }
+    if ((spec as any)?.["x-pre-request-script"]) pres.push((spec as any)["x-pre-request-script"]);
+    for (const f of chain) if (fs[f]?.pre) pres.push(fs[f].pre);
+    if (op?.["x-pre-request-script"]) pres.push(op["x-pre-request-script"]);
+    if (op?.["x-post-response-script"]) posts.push(op["x-post-response-script"]);
+    for (const f of [...chain].reverse()) if (fs[f]?.post) posts.push(fs[f].post);
+    if ((spec as any)?.["x-post-response-script"]) posts.push((spec as any)["x-post-response-script"]);
+    return { pres, posts };
   }
 
   async function send() {
@@ -323,7 +367,7 @@ export function RequestView({ path, method }: { path: string; method: string }) 
     try {
       // bru: 환경/런타임 변수 접근 (스크립트에서 사용)
       const bru: BruApi = {
-        getEnvVar: (k) => activeEnv()?.variables[k],
+        getEnvVar: (k) => { const e = activeEnv(); return e?.variables[k] ?? e?.scriptVariables?.[k]; },
         setEnvVar: (k, v) => setVariable(activeEnvId, k, String(v)),
         getVar: (k) => runtimeVars[k],
         setVar: (k, v) => setRuntimeVar(k, String(v)),
@@ -345,9 +389,9 @@ export function RequestView({ path, method }: { path: string; method: string }) 
         setBody: (b: unknown) => (reqCtx.body = b),
       };
 
-      // Pre-request Script
-      const pre = op["x-pre-request-script"];
-      if (pre) {
+      // Pre-request Script: 컬렉션 → 폴더(부모→자식) → 요청 순.
+      const { pres, posts } = gatherScripts();
+      for (const pre of pres) {
         const r = runScript(pre, { bru, req: reqCtx });
         logs.push(...r.logs);
         if (r.error) logs.push("✖ pre-script: " + r.error);
@@ -360,6 +404,7 @@ export function RequestView({ path, method }: { path: string; method: string }) 
       const authSpec: AuthSpec =
         auth.kind === "bearer" ? { kind: "bearer", token: auth.token }
         : auth.kind === "basic" ? { kind: "basic", username: auth.username, password: auth.password }
+        : auth.kind === "apikey" ? { kind: "apikey", in: auth.apiKeyIn, name: auth.apiKeyName, value: auth.apiKeyValue }
         : { kind: "none" };
 
       const r = await api.sendHttpRequest(
@@ -369,9 +414,8 @@ export function RequestView({ path, method }: { path: string; method: string }) 
       setResp(r);
       setDlExt(guessDownload(r).ext); // 응답마다 추정 확장자로 초기화
 
-      // Post-response Script
-      const post = op["x-post-response-script"];
-      if (post) {
+      // Post-response Script: 요청 → 폴더(자식→부모) → 컬렉션 순.
+      if (posts.length) {
         const resCtx = {
           status: r.status,
           statusText: r.statusText,
@@ -379,9 +423,11 @@ export function RequestView({ path, method }: { path: string; method: string }) 
           body: r.bodyJson ?? r.bodyText,
           responseTime: r.elapsedMs,
         };
-        const rr = runScript(post, { bru, res: resCtx });
-        logs.push(...rr.logs);
-        if (rr.error) logs.push("✖ post-script: " + rr.error);
+        for (const post of posts) {
+          const rr = runScript(post, { bru, res: resCtx });
+          logs.push(...rr.logs);
+          if (rr.error) logs.push("✖ post-script: " + rr.error);
+        }
       }
       setScriptLogs(logs);
     } catch (e: any) {
@@ -489,7 +535,7 @@ export function RequestView({ path, method }: { path: string; method: string }) 
 
       {/* 서브탭 */}
       <div className="reqsubtabs">
-        {(["info", "params", "body", "headers", "auth", "script", "responses", "code"] as Sub[]).map((s) => (
+        {(["info", "params", "headers", "auth", "body", "responses", "script", "code"] as Sub[]).map((s) => (
           <button key={s} className={sub === s ? "st active" : "st"} onClick={() => setSub(s)}>
             {s === "info" ? "Info" : s === "code" ? "Snippet" : s[0].toUpperCase() + s.slice(1)}
             {s === "params" && dot(params.length > 0)}
@@ -547,22 +593,37 @@ export function RequestView({ path, method }: { path: string; method: string }) 
           <div className="authbox">
             <label style={{ maxWidth: 240 }}>
               방식
-              <select value={auth.kind} onChange={(e) => setAuth({ ...auth, kind: e.target.value as any })}>
+              <select value={auth.kind} onChange={(e) => updateAuth({ ...auth, kind: e.target.value as any })}>
                 <option value="none">None</option>
+                <option value="basic">Basic Auth</option>
                 <option value="bearer">Bearer Token</option>
-                <option value="basic">Basic</option>
+                <option value="apikey">API Key</option>
               </select>
             </label>
             {auth.kind === "bearer" && (
-              <label>Token<input value={auth.token} onChange={(e) => setAuth({ ...auth, token: e.target.value })} /></label>
+              <label>Token<input value={auth.token} onChange={(e) => updateAuth({ ...auth, token: e.target.value })} /></label>
             )}
             {auth.kind === "basic" && (
               <div className="row">
-                <label style={{ flex: 1 }}>Username<input value={auth.username} onChange={(e) => setAuth({ ...auth, username: e.target.value })} /></label>
-                <label style={{ flex: 1 }}>Password<input value={auth.password} onChange={(e) => setAuth({ ...auth, password: e.target.value })} /></label>
+                <label style={{ flex: 1 }}>Username<input value={auth.username} onChange={(e) => updateAuth({ ...auth, username: e.target.value })} /></label>
+                <label style={{ flex: 1 }}>Password<input type="password" value={auth.password} onChange={(e) => updateAuth({ ...auth, password: e.target.value })} /></label>
               </div>
             )}
-            <p className="hint tiny">인증은 이 요청의 Send에만 적용됩니다({"{{token}}"} 등 환경변수 사용 가능).</p>
+            {auth.kind === "apikey" && (
+              <>
+                <div className="row">
+                  <label style={{ flex: 1 }}>Key<input value={auth.apiKeyName} placeholder="예: X-API-Key" onChange={(e) => updateAuth({ ...auth, apiKeyName: e.target.value })} /></label>
+                  <label style={{ flex: 1 }}>Value<input value={auth.apiKeyValue} placeholder="예: {{apiKey}}" onChange={(e) => updateAuth({ ...auth, apiKeyValue: e.target.value })} /></label>
+                </div>
+                <label style={{ maxWidth: 160 }}>Add To
+                  <select value={auth.apiKeyIn} onChange={(e) => updateAuth({ ...auth, apiKeyIn: e.target.value as "header" | "query" })}>
+                    <option value="header">Header</option>
+                    <option value="query">Query Param</option>
+                  </select>
+                </label>
+              </>
+            )}
+            <p className="hint tiny">인증은 요청 Send에 적용되고 이 요청에 저장됩니다({"{{token}}"} 등 환경변수 사용 가능).</p>
           </div>
         )}
         {sub === "script" && (

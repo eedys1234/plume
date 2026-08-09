@@ -235,6 +235,31 @@ export function App() {
     }
   }
 
+  // 워크스페이스 삭제(폴더 제거) — 확인 후. 현재 열린 걸 지우면 다른 워크스페이스로 전환.
+  async function deleteWorkspaceHandler(name: string) {
+    const st = useStore.getState();
+    const root = st.projectRoot;
+    if (!root) return;
+    const { confirmWarn } = await import("./dialog");
+    const ok = await confirmWarn(
+      `워크스페이스 '${name}'을(를) 정말 삭제하시겠습니까?\n폴더의 모든 컬렉션·환경·설정이 영구 삭제되며 되돌릴 수 없습니다.`,
+      "워크스페이스 삭제"
+    );
+    if (!ok) return;
+    try {
+      await api.deleteWorkspace(root, name);
+      const remaining = (await refreshWorkspaces(root)).filter((w) => w.name !== name);
+      st.showToast(`워크스페이스 '${name}' 삭제됨`);
+      st.logEvent("Workspace", `삭제 · ${name}`);
+      if (st.workspaceName === name) {
+        if (remaining.length) openWorkspace(remaining[0].name);
+        else setProjectDir(null); // 남은 워크스페이스 없음 → 생성 화면
+      }
+    } catch (e: any) {
+      st.showToast(`삭제 실패: ${e?.message ?? e}`, "err");
+    }
+  }
+
   // 워크스페이스 이름 변경(폴더 rename). 현재 열린 워크스페이스면 경로·이름을 새 값으로 갱신.
   async function renameWorkspaceHandler(oldName: string, newName: string) {
     const st = useStore.getState();
@@ -278,7 +303,7 @@ export function App() {
           <button className="active" onClick={browseRoot}>📁 프로젝트 폴더 선택</button>
         )}
         {/* 워크스페이스 전환(현재/마지막 워크스페이스명 표시) + 새 워크스페이스 ＋ */}
-        <WorkspaceSwitcher onOpenWs={openWorkspace} onNewWs={() => setShowNewWs(true)} onChangeRoot={browseRoot} onRenameWs={renameWorkspaceHandler} />
+        <WorkspaceSwitcher onOpenWs={openWorkspace} onNewWs={() => setShowNewWs(true)} onChangeRoot={browseRoot} onRenameWs={renameWorkspaceHandler} onDeleteWs={deleteWorkspaceHandler} />
         {projectRoot && <button className="wsadd" title="새 워크스페이스" onClick={() => setShowNewWs(true)}>＋</button>}
         {projectDir && <button onClick={() => setShowImport(true)}>⬇ Import</button>}
         {projectDir && <button onClick={() => setShowExport(true)}>⬆ Export</button>}
@@ -568,11 +593,12 @@ function WorkspaceGate({ onOpenRoot, onBrowseRoot, onOpenWs, onNewWs }: {
 }
 
 // 상단 워크스페이스 전환기(현재 프로젝트 폴더 하위 목록에서 전환·생성).
-function WorkspaceSwitcher({ onOpenWs, onNewWs, onChangeRoot, onRenameWs }: {
+function WorkspaceSwitcher({ onOpenWs, onNewWs, onChangeRoot, onRenameWs, onDeleteWs }: {
   onOpenWs: (name: string) => void;
   onNewWs: () => void;
   onChangeRoot: () => void;
   onRenameWs: (oldName: string, newName: string) => void;
+  onDeleteWs: (name: string) => void;
 }) {
   const { workspaceName, workspaces, projectRoot } = useStore(
     useShallow((s) => ({ workspaceName: s.workspaceName, workspaces: s.workspaces, projectRoot: s.projectRoot }))
@@ -626,6 +652,13 @@ function WorkspaceSwitcher({ onOpenWs, onNewWs, onChangeRoot, onRenameWs }: {
                       onClick={(e) => { e.stopPropagation(); setEditing(w.name); setEditName(w.name); }}
                     >
                       ✎
+                    </button>
+                    <button
+                      className="wsrenamebtn"
+                      title="워크스페이스 삭제"
+                      onClick={(e) => { e.stopPropagation(); setOpen(false); onDeleteWs(w.name); }}
+                    >
+                      🗑
                     </button>
                   </>
                 )}

@@ -256,7 +256,7 @@ components:
         let mut vars = BTreeMap::new();
         vars.insert("baseUrl".to_string(), "http://localhost:8080".to_string());
         let cfg = ClientConfig {
-            environments: vec![Environment { id: "local".into(), name: "Local".into(), variables: vars }],
+            environments: vec![Environment { id: "local".into(), name: "Local".into(), variables: vars, ..Default::default() }],
             active_environment_id: "local".into(),
         };
         save_client(dir.path(), &cfg).unwrap();
