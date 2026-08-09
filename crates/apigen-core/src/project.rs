@@ -86,10 +86,13 @@ pub fn bundle(root: &Path) -> Result<(OpenAPI, Vec<Diagnostic>)> {
         ..Default::default()
     };
 
-    // 1b) 메모(x-comments) 복원 — split이 project.yaml에 보존한 값.
+    // 1b) 메모(x-comments)·노트(x-notes) 복원 — split이 project.yaml에 보존한 값.
     if !proj.x_comments.is_null() {
         spec.extensions
             .insert("x-comments".to_string(), proj.x_comments);
+    }
+    if !proj.x_notes.is_null() {
+        spec.extensions.insert("x-notes".to_string(), proj.x_notes);
     }
 
     // 2) components/** → #/components/*
@@ -367,10 +370,15 @@ pub fn split(root: &Path, spec: &OpenAPI) -> Result<()> {
         openapi: spec.openapi.clone(),
         info: spec.info.clone(),
         servers: spec.servers.clone(),
-        // 메모는 루트 확장에서 그대로 옮겨 project.yaml에 보존.
+        // 메모·노트는 루트 확장에서 그대로 옮겨 project.yaml에 보존.
         x_comments: spec
             .extensions
             .get("x-comments")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        x_notes: spec
+            .extensions
+            .get("x-notes")
             .cloned()
             .unwrap_or(serde_json::Value::Null),
     };

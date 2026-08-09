@@ -53,6 +53,13 @@ pub struct ProjectFile {
         skip_serializing_if = "serde_json::Value::is_null"
     )]
     pub x_comments: serde_json::Value,
+    /// Specification 화면 자유 노트(문자열). 루트 `x-notes`로 왕복.
+    #[serde(
+        default,
+        rename = "x-notes",
+        skip_serializing_if = "serde_json::Value::is_null"
+    )]
+    pub x_notes: serde_json::Value,
 }
 
 fn default_openapi_version() -> String {

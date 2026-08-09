@@ -183,6 +183,18 @@ export function basename(p: string): string {
 // 키 입력마다 검증 IPC가 폭주하지 않도록 revalidate를 디바운스한다.
 let _revalidateTimer: ReturnType<typeof setTimeout> | null = null;
 
+// 환경 변경 시 프로젝트가 열려 있으면 디스크에 자동 저장(디바운스).
+// → "환경변수를 만들었는데 저장이 안 된다"를 방지(명시적 버튼/Ctrl+S 없이도 유지).
+let _envPersistTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleEnvPersist(get: () => AppState) {
+  if (_envPersistTimer) clearTimeout(_envPersistTimer);
+  _envPersistTimer = setTimeout(() => {
+    _envPersistTimer = null;
+    const dir = get().projectDir;
+    if (dir) void get().persistClient(dir);
+  }, 500);
+}
+
 export const useStore = create<AppState>((set, get) => ({
   gnb: "builder",
   builderTab: "design",
@@ -293,27 +305,35 @@ export const useStore = create<AppState>((set, get) => ({
       environments: [...get().environments, { id, name: `Env ${n}`, variables: {} }],
       activeEnvId: id,
     });
+    scheduleEnvPersist(get);
   },
   removeEnvironment: (id) => {
     const rest = get().environments.filter((e) => e.id !== id);
     set({ environments: rest, activeEnvId: rest[0]?.id ?? "" });
+    scheduleEnvPersist(get);
   },
-  renameEnvironment: (id, name) =>
-    set({ environments: get().environments.map((e) => (e.id === id ? { ...e, name } : e)) }),
-  setVariable: (envId, key, value) =>
+  renameEnvironment: (id, name) => {
+    set({ environments: get().environments.map((e) => (e.id === id ? { ...e, name } : e)) });
+    scheduleEnvPersist(get);
+  },
+  setVariable: (envId, key, value) => {
     set({
       environments: get().environments.map((e) =>
         e.id === envId ? { ...e, variables: { ...e.variables, [key]: value } } : e
       ),
-    }),
-  removeVariable: (envId, key) =>
+    });
+    scheduleEnvPersist(get);
+  },
+  removeVariable: (envId, key) => {
     set({
       environments: get().environments.map((e) => {
         if (e.id !== envId) return e;
         const { [key]: _drop, ...rest } = e.variables;
         return { ...e, variables: rest };
       }),
-    }),
+    });
+    scheduleEnvPersist(get);
+  },
 
   runtimeVars: {},
   setRuntimeVar: (key, value) => set((s) => ({ runtimeVars: { ...s.runtimeVars, [key]: value } })),

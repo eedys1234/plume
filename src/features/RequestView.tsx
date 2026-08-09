@@ -145,12 +145,14 @@ function sampleFromSchema(s: any, cur?: any): any {
 }
 
 export function RequestView({ path, method }: { path: string; method: string }) {
-  const { spec, updateSpec, activeEnv, activeEnvId, setVariable, runtimeVars, setRuntimeVar, openTab, closeTab } = useStore(
+  const { spec, updateSpec, environments, activeEnvId, setVariable, runtimeVars, setRuntimeVar, openTab, closeTab } = useStore(
     useShallow((s) => ({
-      spec: s.spec, updateSpec: s.updateSpec, activeEnv: s.activeEnv, activeEnvId: s.activeEnvId,
+      spec: s.spec, updateSpec: s.updateSpec, environments: s.environments, activeEnvId: s.activeEnvId,
       setVariable: s.setVariable, runtimeVars: s.runtimeVars, setRuntimeVar: s.setRuntimeVar, openTab: s.openTab, closeTab: s.closeTab,
     }))
   );
+  // environments를 직접 구독하고 활성 환경은 로컬 파생 → 환경변수 변경이 즉시 재렌더에 반영.
+  const activeEnv = () => environments.find((e) => e.id === activeEnvId);
   const op = spec.paths?.[path]?.[method];
   const edit = (fn: (o: any) => void) => updateSpec((d) => fn(d.paths[path][method]));
 

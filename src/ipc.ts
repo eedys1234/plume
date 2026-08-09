@@ -183,6 +183,8 @@ export const api = {
   writeBytesFile: (path: string, bytes: number[]) => invoke<void>("write_bytes_file", { path, bytes }),
   readTextFile: (path: string) => invoke<string | null>("read_text_file", { path }),
   listWorkspaces: (root: string) => invoke<{ name: string; path: string }[]>("list_workspaces", { root }),
+  renameWorkspace: (root: string, oldName: string, newName: string) =>
+    invoke<string>("rename_workspace", { root, oldName, newName }),
   saveWorkspaceCollections: (wsDir: string, collections: { name: string; spec: Spec }[]) =>
     invoke<void>("save_workspace_collections", { wsDir, collections }),
   loadWorkspaceCollections: (wsDir: string) =>

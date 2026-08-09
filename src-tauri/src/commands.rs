@@ -373,6 +373,37 @@ pub fn list_workspaces(root: String) -> CmdResult<Vec<WorkspaceInfo>> {
     Ok(out)
 }
 
+/// 워크스페이스 폴더 이름 변경: `<root>/<old>` → `<root>/<new>` + `.plume/workspace.json` 갱신.
+/// 폴더명이 곧 워크스페이스 식별자이므로 폴더 자체를 rename 한다.
+#[tauri::command]
+pub fn rename_workspace(root: String, old_name: String, new_name: String) -> CmdResult<String> {
+    let new = new_name.trim();
+    if new.is_empty() || new.contains('/') || new.contains('\\') || new.contains("..") {
+        return Err(core::CoreError::Project("올바르지 않은 워크스페이스 이름".into()).into());
+    }
+    let root_p = Path::new(&root);
+    let from = root_p.join(&old_name);
+    let to = root_p.join(new);
+    if !from.is_dir() {
+        return Err(core::CoreError::Project("원본 워크스페이스를 찾을 수 없습니다".into()).into());
+    }
+    if new != old_name {
+        if to.exists() {
+            return Err(core::CoreError::Project("같은 이름의 워크스페이스가 이미 있습니다".into()).into());
+        }
+        std::fs::rename(&from, &to)
+            .map_err(|e| core::CoreError::Project(format!("이름 변경 실패: {e}")))?;
+    }
+    // 표시명 일치를 위해 workspace.json 갱신.
+    let plume = to.join(".plume");
+    let _ = std::fs::create_dir_all(&plume);
+    let _ = std::fs::write(
+        plume.join("workspace.json"),
+        serde_json::to_string_pretty(&serde_json::json!({ "name": new })).unwrap_or_default(),
+    );
+    Ok(to.to_string_lossy().to_string())
+}
+
 /// 텍스트 파일 읽기. 없으면 None(체인 로드 등에서 최초 실행 대응).
 #[tauri::command]
 pub fn read_text_file(path: String) -> CmdResult<Option<String>> {
@@ -522,5 +553,36 @@ mod tests {
         let has_login = loaded.iter().any(|c|
             c.spec.get("paths").and_then(|p| p.get("/user/Login")).is_some());
         assert!(has_login, "대소문자 경로 /user/Login 보존");
+    }
+
+    // 환경변수 저장(persistClient)→컬렉션 저장(Ctrl+S)→환경 로드(loadClient) 왕복.
+    // "환경변수가 저장 안 된다" 버그 리포트 검증.
+    #[test]
+    fn environment_vars_persist_through_collection_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().to_string_lossy().to_string();
+
+        let mut vars = std::collections::BTreeMap::new();
+        vars.insert("baseUrl".to_string(), "http://x".to_string());
+        vars.insert("token".to_string(), "abc".to_string());
+        let cfg = ClientConfig {
+            environments: vec![Environment { id: "local".into(), name: "Local".into(), variables: vars }],
+            active_environment_id: "local".into(),
+        };
+        // 1) 환경 저장
+        save_client_config(ws.clone(), cfg).unwrap();
+        // 2) 그 사이 컬렉션 저장(환경 폴더를 지우면 안 됨)
+        let spec = serde_json::json!({
+            "openapi": "3.0.3", "info": { "title": "A", "version": "1" },
+            "paths": { "/a": { "get": { "responses": { "200": { "description": "ok" } } } } }
+        });
+        save_workspace_collections(ws.clone(), vec![CollectionIn { name: "A".into(), spec }]).unwrap();
+        // 3) 다시 로드 → 변수 보존
+        let loaded = load_client_config(ws).unwrap();
+        assert_eq!(loaded.environments.len(), 1, "환경 1개 로드돼야");
+        assert_eq!(loaded.active_environment_id, "local");
+        let env = &loaded.environments[0];
+        assert_eq!(env.variables.get("baseUrl").map(String::as_str), Some("http://x"));
+        assert_eq!(env.variables.get("token").map(String::as_str), Some("abc"));
     }
 }

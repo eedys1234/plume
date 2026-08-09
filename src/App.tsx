@@ -233,6 +233,27 @@ export function App() {
     }
   }
 
+  // 워크스페이스 이름 변경(폴더 rename). 현재 열린 워크스페이스면 경로·이름을 새 값으로 갱신.
+  async function renameWorkspaceHandler(oldName: string, newName: string) {
+    const st = useStore.getState();
+    const root = st.projectRoot;
+    if (!root) return;
+    try {
+      const newDir = await api.renameWorkspace(root, oldName, newName);
+      if (lastWsFor(root) === oldName) setLastWsFor(root, newName);
+      if (st.workspaceName === oldName) {
+        setProjectDir(newDir);
+        st.setWorkspaceName(newName);
+        try { localStorage.setItem(LAST_FOLDER_KEY, newDir); } catch {}
+      }
+      await refreshWorkspaces(root);
+      st.showToast(`이름 변경됨: ${newName} ✓`);
+      st.logEvent("Workspace", `이름 변경 · ${oldName} → ${newName}`);
+    } catch (e: any) {
+      st.showToast(`변경 실패: ${e?.message ?? e}`, "err");
+    }
+  }
+
   // 시작 시: 저장된 프로젝트 폴더가 있으면 열기(내부에서 마지막 워크스페이스 자동 선택).
   useEffect(() => {
     const root = useStore.getState().projectRoot;
@@ -255,7 +276,7 @@ export function App() {
           <button className="active" onClick={browseRoot}>📁 프로젝트 폴더 선택</button>
         )}
         {/* 워크스페이스 전환(현재/마지막 워크스페이스명 표시) + 새 워크스페이스 ＋ */}
-        <WorkspaceSwitcher onOpenWs={openWorkspace} onNewWs={() => setShowNewWs(true)} onChangeRoot={browseRoot} />
+        <WorkspaceSwitcher onOpenWs={openWorkspace} onNewWs={() => setShowNewWs(true)} onChangeRoot={browseRoot} onRenameWs={renameWorkspaceHandler} />
         {projectRoot && <button className="wsadd" title="새 워크스페이스" onClick={() => setShowNewWs(true)}>＋</button>}
         {projectDir && <button onClick={() => setShowIO(true)}>⇅ Import / Export</button>}
         <span className="spacer" />
@@ -530,15 +551,18 @@ function WorkspaceGate({ onOpenRoot, onBrowseRoot, onOpenWs, onNewWs }: {
 }
 
 // 상단 워크스페이스 전환기(현재 프로젝트 폴더 하위 목록에서 전환·생성).
-function WorkspaceSwitcher({ onOpenWs, onNewWs, onChangeRoot }: {
+function WorkspaceSwitcher({ onOpenWs, onNewWs, onChangeRoot, onRenameWs }: {
   onOpenWs: (name: string) => void;
   onNewWs: () => void;
   onChangeRoot: () => void;
+  onRenameWs: (oldName: string, newName: string) => void;
 }) {
   const { workspaceName, workspaces, projectRoot } = useStore(
     useShallow((s) => ({ workspaceName: s.workspaceName, workspaces: s.workspaces, projectRoot: s.projectRoot }))
   );
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
   if (!projectRoot) return null;
   return (
     <div className="wsswitcher">
@@ -554,12 +578,40 @@ function WorkspaceSwitcher({ onOpenWs, onNewWs, onChangeRoot }: {
             <div className="wsmenuhead">워크스페이스 · 📁 {basename(projectRoot)}</div>
             {workspaces.length === 0 && <div className="hint tiny" style={{ padding: "6px 12px" }}>워크스페이스 없음</div>}
             {workspaces.map((w) => (
-              <div
-                key={w.path}
-                className={w.name === workspaceName ? "wsitem cur" : "wsitem"}
-                onClick={() => { setOpen(false); if (w.name !== workspaceName) onOpenWs(w.name); }}
-              >
-                <span className="wsitemname">{w.name === workspaceName ? "● " : ""}{w.name}</span>
+              <div key={w.path} className={w.name === workspaceName ? "wsitem cur" : "wsitem"}>
+                {editing === w.name ? (
+                  <input
+                    className="wsrename"
+                    autoFocus
+                    value={editName}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onBlur={() => setEditing(null)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const nn = editName.trim();
+                        setEditing(null);
+                        if (nn && nn !== w.name) { onRenameWs(w.name, nn); setOpen(false); }
+                      } else if (e.key === "Escape") setEditing(null);
+                    }}
+                  />
+                ) : (
+                  <>
+                    <span
+                      className="wsitemname"
+                      onClick={() => { setOpen(false); if (w.name !== workspaceName) onOpenWs(w.name); }}
+                    >
+                      {w.name === workspaceName ? "● " : ""}{w.name}
+                    </span>
+                    <button
+                      className="wsrenamebtn"
+                      title="이름 변경"
+                      onClick={(e) => { e.stopPropagation(); setEditing(w.name); setEditName(w.name); }}
+                    >
+                      ✎
+                    </button>
+                  </>
+                )}
               </div>
             ))}
             <div className="wsmenusep" />

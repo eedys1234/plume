@@ -678,7 +678,19 @@ pub fn import_collection(root: &Path) -> Result<BruImport> {
             }
         }
 
-        let entry = paths.entry(path).or_insert_with(|| Value::Object(Map::new()));
+        // 같은 path+method 충돌 시 요청 유실 방지 → path에 접미사(-2,-3…)를 붙여 유니크화.
+        // (Bruno는 동일 URL/메서드 요청을 여러 개 둘 수 있으나 OpenAPI는 하나만 허용)
+        let mut final_path = path.clone();
+        let mut n = 2;
+        while paths
+            .get(&final_path)
+            .and_then(|m| m.get(method.as_str()))
+            .is_some()
+        {
+            final_path = format!("{path}-{n}");
+            n += 1;
+        }
+        let entry = paths.entry(final_path).or_insert_with(|| Value::Object(Map::new()));
         if let Value::Object(m) = entry {
             m.insert(method, op);
         }
@@ -862,5 +874,22 @@ paths:
         assert!(text.contains("vars {"));
         let back = parse_env(&text, "local", "Local");
         assert_eq!(back.variables.get("baseUrl").unwrap(), "http://localhost:8080");
+    }
+
+    // 같은 URL/메서드 요청 2개가 import에서 유실되지 않아야("일부 요청 누락" 버그).
+    #[test]
+    fn import_collection_keeps_colliding_requests() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("bruno.json"), r#"{"name":"C","version":"1"}"#).unwrap();
+        fs::write(dir.path().join("a.bru"), "meta {\n  name: Login OK\n}\n\npost {\n  url: {{baseUrl}}/login\n}\n").unwrap();
+        fs::write(dir.path().join("b.bru"), "meta {\n  name: Login Fail\n}\n\npost {\n  url: {{baseUrl}}/login\n}\n").unwrap();
+
+        let imported = import_collection(dir.path()).unwrap();
+        let paths = imported.spec.get("paths").and_then(|p| p.as_object()).unwrap();
+        let login_posts = paths
+            .iter()
+            .filter(|(k, v)| k.starts_with("/login") && v.get("post").is_some())
+            .count();
+        assert_eq!(login_posts, 2, "충돌한 두 요청이 모두 보존돼야(유실 없음)");
     }
 }

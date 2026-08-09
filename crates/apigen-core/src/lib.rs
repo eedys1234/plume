@@ -362,6 +362,22 @@ paths:
     }
 
     #[test]
+    fn notes_survive_split_bundle() {
+        // 루트 x-notes(Specification 노트)가 split→bundle 왕복에서 보존되는지.
+        let mut spec = import_spec(
+            "openapi: 3.0.3\ninfo: { title: N, version: \"1\" }\npaths:\n  /n:\n    get: { responses: { \"200\": { description: ok } } }\n",
+            Some(Format::Yaml),
+        ).unwrap();
+        spec.extensions.insert("x-notes".to_string(), serde_json::json!("배포 전 확인 메모"));
+
+        let dir = tempfile::tempdir().unwrap();
+        split(dir.path(), &spec).unwrap();
+        let (loaded, _w) = bundle(dir.path()).unwrap();
+
+        assert_eq!(loaded.extensions.get("x-notes"), Some(&serde_json::json!("배포 전 확인 메모")));
+    }
+
+    #[test]
     fn markdown_contains_endpoint() {
         let md = to_markdown(&sample_spec(), &MarkdownOptions::default());
         assert!(md.contains("# Sample API"));

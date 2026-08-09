@@ -49,7 +49,13 @@ function CopyIcon() {
 }
 
 export function Docs() {
-  const { spec, projectDir } = useStore(useShallow((s) => ({ spec: s.spec, projectDir: s.projectDir })));
+  const { spec, projectDir, updateSpec } = useStore(
+    useShallow((s) => ({ spec: s.spec, projectDir: s.projectDir, updateSpec: s.updateSpec }))
+  );
+  const notes = typeof (spec as any)?.["x-notes"] === "string" ? ((spec as any)["x-notes"] as string) : "";
+  function setNotes(v: string) {
+    updateSpec((d: any) => { if (v.trim()) d["x-notes"] = v; else delete d["x-notes"]; });
+  }
   const [view, setView] = useState<View>("markdown");
   const [md, setMd] = useState("");
   const [inclEx, setInclEx] = useState(true);
@@ -190,6 +196,18 @@ export function Docs() {
         )}
         <span className="status docpubmsg">{msg}</span>
       </div>
+
+      {/* 문서 노트 — 이 컬렉션(스펙)과 함께 저장·git 공유(x-notes) */}
+      <details className="specnotes" open={!!notes}>
+        <summary>📝 노트 {notes ? "" : "(비어 있음)"}</summary>
+        <textarea
+          className="specnotestext"
+          rows={4}
+          value={notes}
+          placeholder="이 API 문서에 대한 메모를 남기세요. 저장 시 컬렉션과 함께 보관되고 git으로 공유됩니다."
+          onChange={(e) => setNotes(e.target.value)}
+        />
+      </details>
 
       {view === "markdown" &&
         (md ? (
