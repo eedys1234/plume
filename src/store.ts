@@ -1,6 +1,11 @@
 // 앱 전역 상태(SSOT). 스펙 문서 그 자체를 단일 진실 원천으로 보유한다(§2 원칙 2).
 import { create } from "zustand";
+import { produce, setAutoFreeze } from "immer";
 import { api, type Diagnostic, type Environment, type HttpRequestSpec, type Spec } from "./ipc";
+
+// 큰 스펙(수백~수천 요청)에서 매 편집마다 전체 복사를 피하려고 immer 구조적 공유를 쓴다.
+// 자동 freeze는 기존 코드의 직접 변이를 크래시로 바꿀 수 있어 끈다(안전 우선).
+setAutoFreeze(false);
 
 // LNB(좌측 전역 네비) + Builder 하위 탭.
 export type Gnb = "builder" | "environment" | "import" | "git" | "history";
@@ -273,8 +278,9 @@ export const useStore = create<AppState>((set, get) => ({
     void get().revalidate();
   },
   updateSpec: (fn) => {
-    const next = structuredClone(get().spec);
-    fn(next);
+    // immer: 바뀐 경로만 새로 만들고 나머지는 참조 공유 → 대형 스펙에서 O(전체) 복사 제거.
+    // (Spec=any 라 immer 오버로드가 커리로 잡히는 걸 캐스팅으로 방지)
+    const next = produce(get().spec, (draft: Spec) => { fn(draft); }) as Spec;
     const id = get().activeCollectionId;
     set((s) => ({
       spec: next,

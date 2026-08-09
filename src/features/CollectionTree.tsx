@@ -1,7 +1,7 @@
 // 재사용 Collection → Folder → Request 트리 + 우클릭 컨텍스트 메뉴.
 // spec 프롭을 주면 그 컬렉션을, 없으면 store의 활성 컬렉션을 렌더한다.
 // 여러 컬렉션을 동시에 나열할 땐 Builder가 컬렉션마다 하나씩 렌더한다.
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { Spec } from "../ipc";
 import {
   buildTree,
@@ -17,7 +17,7 @@ export interface TreeMenuItem {
   run: () => void;
 }
 
-export function CollectionTree({
+export const CollectionTree = memo(function CollectionTree({
   spec: specProp,
   collectionId,
   isActive,
@@ -41,15 +41,20 @@ export function CollectionTree({
   const storeSpec = useStore((s) => s.spec);
   const spec = specProp ?? storeSpec;
   const q = (filter ?? "").toLowerCase().trim();
-  const ops = listOperations(spec).filter(
-    (e) =>
-      !q ||
-      e.path.toLowerCase().includes(q) ||
-      e.method.toLowerCase().includes(q) ||
-      (e.op?.summary ?? "").toLowerCase().includes(q) ||
-      (e.op?.tags ?? []).some((t: string) => t.toLowerCase().includes(q)) // 태그 키워드 검색
+  // 대형 컬렉션(수백~수천 요청)에서 매 렌더마다 listOperations/buildTree 재계산을 피한다.
+  const ops = useMemo(
+    () =>
+      listOperations(spec).filter(
+        (e) =>
+          !q ||
+          e.path.toLowerCase().includes(q) ||
+          e.method.toLowerCase().includes(q) ||
+          (e.op?.summary ?? "").toLowerCase().includes(q) ||
+          (e.op?.tags ?? []).some((t: string) => t.toLowerCase().includes(q)) // 태그 키워드 검색
+      ),
+    [spec, q]
   );
-  const tree = buildTree(ops, q ? [] : specFolders(spec));
+  const tree = useMemo(() => buildTree(ops, q ? [] : specFolders(spec)), [ops, spec, q]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [colOpen, setColOpen] = useState(true);
   const [menu, setMenu] = useState<{ x: number; y: number; target: Target } | null>(null);
@@ -146,4 +151,4 @@ export function CollectionTree({
       )}
     </div>
   );
-}
+});
