@@ -10,8 +10,22 @@ use serde::Serialize;
 
 use crate::error::{CoreError, Result};
 
+/// git `Command`를 만든다. **Windows에서는 CREATE_NO_WINDOW**를 지정해
+/// git 호출마다 콘솔(Terminal) 창이 뜨는 것을 막는다(성능·UX 문제).
+pub(crate) fn git_command() -> Command {
+    #[allow(unused_mut)]
+    let mut c = Command::new("git");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        c.creation_flags(CREATE_NO_WINDOW);
+    }
+    c
+}
+
 fn run(root: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git")
+    let out = git_command()
         .args(args)
         .current_dir(root)
         .output()
@@ -157,7 +171,7 @@ pub fn diff_file(root: &Path, path: &str, staged: bool) -> Result<String> {
         return Ok(d);
     }
     // untracked 가능성 → --no-index (diff 있으면 exit 1이므로 stdout만 취함)
-    let out = Command::new("git")
+    let out = git_command()
         .args(["diff", "--no-index", "--", "/dev/null", path])
         .current_dir(root)
         .output()

@@ -10,7 +10,6 @@
 //! 의존하지 않는다(오프라인·사내망 차단 환경에서도 안전).
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::error::{CoreError, Result};
 
@@ -166,7 +165,7 @@ fn html_escape(s: &str) -> String {
 }
 
 fn run(root: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git")
+    let out = crate::git::git_command()
         .args(args)
         .current_dir(root)
         .output()
