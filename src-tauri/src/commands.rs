@@ -191,6 +191,34 @@ pub fn import_bru_collection(dir: String) -> CmdResult<core::bru::BruImport> {
     Ok(core::bru::import_collection(Path::new(&dir))?)
 }
 
+/// 환경 파일 텍스트(Bruno YAML/.bru) → Environment.
+#[tauri::command]
+pub fn import_bruno_environment(text: String, id: String) -> CmdResult<Environment> {
+    Ok(core::bru::import_env_auto(&text, &id))
+}
+
+// ─────────────────────────── Postman 호환 ───────────────────────────
+
+/// Postman Collection(JSON 텍스트) → 내부 스펙.
+#[tauri::command]
+pub fn import_postman_collection(text: String) -> CmdResult<Value> {
+    Ok(core::postman::import_collection(&text)?)
+}
+
+/// Postman Environment(JSON 텍스트) → Environment.
+#[tauri::command]
+pub fn import_postman_environment(text: String, id: String) -> CmdResult<Environment> {
+    Ok(core::postman::import_environment(&text, &id)?)
+}
+
+/// 내부 스펙 → Postman Collection(JSON 문자열).
+#[tauri::command]
+pub fn export_postman_collection(spec: Value) -> CmdResult<String> {
+    let pm = core::postman::export_collection(&spec);
+    let s = serde_json::to_string_pretty(&pm).map_err(core::CoreError::from)?;
+    Ok(s)
+}
+
 // ─────────────────────────── 부하 테스트 ───────────────────────────
 
 #[tauri::command]
@@ -444,6 +472,26 @@ pub fn git_push(dir: String) -> CmdResult<String> {
 #[tauri::command]
 pub fn git_pull(dir: String) -> CmdResult<String> {
     Ok(core::git::pull(Path::new(&dir))?)
+}
+#[tauri::command]
+pub fn git_stash_save(dir: String, message: String, include_untracked: bool) -> CmdResult<String> {
+    Ok(core::git::stash_save(Path::new(&dir), &message, include_untracked)?)
+}
+#[tauri::command]
+pub fn git_stash_list(dir: String) -> CmdResult<Vec<core::git::StashEntry>> {
+    Ok(core::git::stash_list(Path::new(&dir))?)
+}
+#[tauri::command]
+pub fn git_stash_pop(dir: String, index: usize) -> CmdResult<String> {
+    Ok(core::git::stash_pop(Path::new(&dir), index)?)
+}
+#[tauri::command]
+pub fn git_stash_apply(dir: String, index: usize) -> CmdResult<String> {
+    Ok(core::git::stash_apply(Path::new(&dir), index)?)
+}
+#[tauri::command]
+pub fn git_stash_drop(dir: String, index: usize) -> CmdResult<String> {
+    Ok(core::git::stash_drop(Path::new(&dir), index)?)
 }
 #[tauri::command]
 pub fn git_branches(dir: String) -> CmdResult<Vec<String>> {

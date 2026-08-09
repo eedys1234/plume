@@ -34,8 +34,8 @@ function svgSize(svg: string): { w: number; h: number } {
 }
 
 export function ApiCallChain() {
-  const { spec, chains, setChains, projectDir, logEvent } = useStore(
-    useShallow((s) => ({ spec: s.spec, chains: s.chains, setChains: s.setChains, projectDir: s.projectDir, logEvent: s.logEvent }))
+  const { spec, collections, chains, setChains, projectDir, logEvent } = useStore(
+    useShallow((s) => ({ spec: s.spec, collections: s.collections, chains: s.chains, setChains: s.setChains, projectDir: s.projectDir, logEvent: s.logEvent }))
   );
   const [activeId, setActiveId] = useState<string>(chains[0]?.id ?? "");
   const [svg, setSvg] = useState("");
@@ -76,9 +76,11 @@ export function ApiCallChain() {
     setChains(rest);
     if (activeId === id) setActiveId(rest[0]?.id ?? "");
   }
-  function addStep(path: string, method: string, label?: string) {
+  function addStep(path: string, method: string, label?: string, colName?: string) {
     if (!active) { setMsg("먼저 체인을 만들거나 선택하세요"); return; }
-    updateChain((c) => c.steps.push({ method, path, label }));
+    // 여러 컬렉션에서 추가할 수 있으므로 라벨에 컬렉션명을 접두로 붙여 구분.
+    const full = colName && colName !== spec?.info?.title ? `[${colName}] ${label ?? ""}`.trim() : label;
+    updateChain((c) => c.steps.push({ method, path, label: full }));
   }
   function importAll() {
     if (!active) { setMsg("먼저 체인을 만들거나 선택하세요"); return; }
@@ -169,12 +171,21 @@ export function ApiCallChain() {
         </ul>
       </aside>
 
-      {/* 2) 컬렉션 → 스텝 */}
+      {/* 2) 컬렉션 → 스텝 (모든 컬렉션에서 선택 가능) */}
       <aside className="chaincol coltree">
         <div className="chaincolhead"><h3>컬렉션 → 스텝</h3></div>
-        <div className="hint tiny">요청 클릭 = 스텝 추가</div>
-        <button onClick={importAll} style={{ margin: "6px 0", width: "100%" }}>컬렉션 전체를 스텝으로</button>
-        <CollectionTree onSelectRequest={(p, m, op) => addStep(p, m, op?.summary)} />
+        <div className="hint tiny">요청 클릭 = 스텝 추가 · 여러 컬렉션에서 선택 가능</div>
+        <button onClick={importAll} style={{ margin: "6px 0", width: "100%" }}>활성 컬렉션 전체를 스텝으로</button>
+        {collections.map((col) => (
+          <div key={col.id} className="chaincoltree">
+            <div className="chaincolname">📦 {col.name}</div>
+            <CollectionTree
+              spec={col.spec}
+              collectionId={col.id}
+              onSelectRequest={(p, m, op) => addStep(p, m, op?.summary, col.name)}
+            />
+          </div>
+        ))}
       </aside>
 
       {/* 3) 호출 스텝(큼직하게) */}

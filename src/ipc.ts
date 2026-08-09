@@ -137,6 +137,14 @@ export const api = {
   // Bruno .bru 컬렉션 폴더 → 스펙 + 환경 Import
   importBruCollection: (dir: string) =>
     invoke<{ spec: Spec; environments: Environment[] }>("import_bru_collection", { dir }),
+  importBrunoEnvironment: (text: string, id: string) =>
+    invoke<Environment>("import_bruno_environment", { text, id }),
+  importPostmanCollection: (text: string) =>
+    invoke<Spec>("import_postman_collection", { text }),
+  importPostmanEnvironment: (text: string, id: string) =>
+    invoke<Environment>("import_postman_environment", { text, id }),
+  exportPostmanCollection: (spec: Spec) =>
+    invoke<string>("export_postman_collection", { spec }),
 
   // 코드 스니펫 (언어, 코드)[]
   codeSnippets: (req: HttpRequestSpec, env?: Environment) =>
@@ -164,6 +172,12 @@ export const api = {
   gitCommit: (dir: string, message: string) => invoke<string>("git_commit", { dir, message }),
   gitPush: (dir: string) => invoke<string>("git_push", { dir }),
   gitPull: (dir: string) => invoke<string>("git_pull", { dir }),
+  gitStashSave: (dir: string, message: string, includeUntracked: boolean) =>
+    invoke<string>("git_stash_save", { dir, message, includeUntracked }),
+  gitStashList: (dir: string) => invoke<{ index: number; message: string }[]>("git_stash_list", { dir }),
+  gitStashPop: (dir: string, index: number) => invoke<string>("git_stash_pop", { dir, index }),
+  gitStashApply: (dir: string, index: number) => invoke<string>("git_stash_apply", { dir, index }),
+  gitStashDrop: (dir: string, index: number) => invoke<string>("git_stash_drop", { dir, index }),
   gitBranches: (dir: string) => invoke<string[]>("git_branches", { dir }),
   gitCheckout: (dir: string, branch: string, create: boolean) =>
     invoke<string>("git_checkout", { dir, branch, create }),

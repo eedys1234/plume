@@ -9,6 +9,15 @@ import { useShallow } from "zustand/react/shallow";
 
 type View = "markdown" | "redoc" | "swagger";
 
+type Note = { id: string; body: string; createdAt: string };
+function newNoteId(): string {
+  try {
+    return `n_${crypto.randomUUID()}`;
+  } catch {
+    return `n_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+}
+
 // origin 원격 URL로 GitHub 저장소 공개 여부를 판단.
 // 200=공개, 404=비공개/없음, 그 외/GitHub 아님/네트워크오류=불명.
 async function repoVisibility(dir: string): Promise<"public" | "private" | "unknown"> {
@@ -52,9 +61,37 @@ export function Docs() {
   const { spec, projectDir, updateSpec } = useStore(
     useShallow((s) => ({ spec: s.spec, projectDir: s.projectDir, updateSpec: s.updateSpec }))
   );
-  const notes = typeof (spec as any)?.["x-notes"] === "string" ? ((spec as any)["x-notes"] as string) : "";
-  function setNotes(v: string) {
-    updateSpec((d: any) => { if (v.trim()) d["x-notes"] = v; else delete d["x-notes"]; });
+  // 노트: [{id, body, createdAt}] 배열. 과거 문자열 형식은 단일 노트로 이관.
+  const rawNotes = (spec as any)?.["x-notes"];
+  const notes: Note[] = Array.isArray(rawNotes)
+    ? (rawNotes as Note[])
+    : typeof rawNotes === "string" && rawNotes.trim()
+      ? [{ id: "legacy", body: rawNotes, createdAt: "" }]
+      : [];
+  const [noteDraft, setNoteDraft] = useState("");
+  function addNote() {
+    const body = noteDraft.trim();
+    if (!body) return;
+    const note: Note = { id: newNoteId(), body, createdAt: new Date().toISOString() };
+    updateSpec((d: any) => {
+      const cur: Note[] = Array.isArray(d["x-notes"])
+        ? d["x-notes"]
+        : typeof d["x-notes"] === "string" && d["x-notes"].trim()
+          ? [{ id: "legacy", body: d["x-notes"], createdAt: "" }]
+          : [];
+      d["x-notes"] = [...cur, note];
+    });
+    setNoteDraft("");
+  }
+  function delNote(id: string) {
+    updateSpec((d: any) => {
+      if (Array.isArray(d["x-notes"])) {
+        d["x-notes"] = d["x-notes"].filter((n: Note) => n.id !== id);
+        if (d["x-notes"].length === 0) delete d["x-notes"];
+      } else {
+        delete d["x-notes"]; // 레거시 문자열 삭제
+      }
+    });
   }
   const [view, setView] = useState<View>("markdown");
   const [md, setMd] = useState("");
@@ -198,15 +235,30 @@ export function Docs() {
       </div>
 
       {/* 문서 노트 — 이 컬렉션(스펙)과 함께 저장·git 공유(x-notes) */}
-      <details className="specnotes" open={!!notes}>
-        <summary>📝 노트 {notes ? "" : "(비어 있음)"}</summary>
-        <textarea
-          className="specnotestext"
-          rows={4}
-          value={notes}
-          placeholder="이 API 문서에 대한 메모를 남기세요. 저장 시 컬렉션과 함께 보관되고 git으로 공유됩니다."
-          onChange={(e) => setNotes(e.target.value)}
-        />
+      <details className="specnotes" open={notes.length > 0}>
+        <summary>📝 노트 {notes.length ? `(${notes.length})` : "(비어 있음)"}</summary>
+        <div className="notelist">
+          {notes.map((n) => (
+            <div key={n.id} className="noteitem">
+              <div className="notemeta">
+                <span className="notetime">{n.createdAt ? new Date(n.createdAt).toLocaleString() : "(이전 노트)"}</span>
+                <button className="del" title="노트 삭제" onClick={() => delNote(n.id)}>×</button>
+              </div>
+              <div className="notebody">{n.body}</div>
+            </div>
+          ))}
+          {notes.length === 0 && <p className="hint tiny">아직 노트가 없습니다. 아래에 추가하세요.</p>}
+          <div className="noteadd">
+            <textarea
+              rows={2}
+              value={noteDraft}
+              placeholder="노트를 입력하고 Ctrl+Enter로 추가 (등록 시각이 함께 기록됩니다)"
+              onChange={(e) => setNoteDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) addNote(); }}
+            />
+            <button disabled={!noteDraft.trim()} onClick={addNote}>＋ 노트 추가</button>
+          </div>
+        </div>
       </details>
 
       {view === "markdown" &&

@@ -18,6 +18,7 @@ pub mod load;
 pub mod markdown;
 pub mod model;
 pub mod project;
+pub mod postman;
 pub mod publish;
 pub mod snippet;
 pub mod validate;

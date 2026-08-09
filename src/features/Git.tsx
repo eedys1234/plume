@@ -24,6 +24,8 @@ export function Git() {
   const [newBranch, setNewBranch] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [stashes, setStashes] = useState<{ index: number; message: string }[]>([]);
+  const [stashMsg, setStashMsg] = useState("");
   const [histH, setHistH] = usePersistedSize("plume:gitHistH", 175, 90, 600);
 
   async function refresh() {
@@ -36,6 +38,7 @@ export function Git() {
         setBranches(await api.gitBranches(projectDir));
         setRemotes(await api.gitRemotes(projectDir));
         setGraphData(await api.gitGraphData(projectDir, 80));
+        setStashes(await api.gitStashList(projectDir));
       }
     } catch (e: any) {
       setMsg(String(e?.message ?? e));
@@ -125,7 +128,41 @@ export function Git() {
       <div className="gitmain">
         {/* 원격 + 브랜치 패널 (Remotes를 위로 이동) */}
         <div className="gitbranches">
-          <h3>Remotes</h3>
+          <h3>Stash</h3>
+          <div className="row" style={{ marginBottom: 4 }}>
+            <input
+              value={stashMsg}
+              onChange={(e) => setStashMsg(e.target.value)}
+              placeholder="메시지(선택)"
+              style={{ flex: 1, minWidth: 0 }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") act(() => api.gitStashSave(projectDir, stashMsg.trim(), true), "stash").then(() => setStashMsg(""));
+              }}
+            />
+            <button
+              disabled={busy}
+              title="변경사항을 stash에 저장(추적 안 된 파일 포함)"
+              onClick={() => act(() => api.gitStashSave(projectDir, stashMsg.trim(), true), "stash").then(() => setStashMsg(""))}
+            >
+              Stash
+            </button>
+          </div>
+          <ul className="gitfiles">
+            {stashes.length === 0 && <li className="hint tiny">stash 없음</li>}
+            {stashes.map((s) => (
+              <li key={s.index} className="remote">
+                <div className="rinfo">
+                  <b>{`stash@{${s.index}}`}</b>
+                  <code className="rurl" title={s.message}>{s.message}</code>
+                </div>
+                <button className="mini" title="적용 후 삭제(pop)" disabled={busy} onClick={() => act(() => api.gitStashPop(projectDir, s.index), "stash pop", false)}>불러오기</button>
+                <button className="mini" title="적용(유지)" disabled={busy} onClick={() => act(() => api.gitStashApply(projectDir, s.index), "stash apply", false)}>적용</button>
+                <button className="del" title="삭제" onClick={() => confirm(`stash@{${s.index}} 삭제?`) && act(() => api.gitStashDrop(projectDir, s.index), "stash drop")}>×</button>
+              </li>
+            ))}
+          </ul>
+
+          <h3 style={{ marginTop: 14 }}>Remotes</h3>
           <ul className="gitfiles">
             {remotes.length === 0 && <li className="hint tiny">원격 없음</li>}
             {remotes.map(([name, url]) => (

@@ -97,8 +97,20 @@ input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-ring);
-  background: var(--surface-2);
+  background-color: var(--surface-2);
 }
+/* select — Plume 컨셉 커스텀 캐럿(인디고) + 일관된 라운드/여백 */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 28px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237c86ff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 12px;
+}
+select:hover { border-color: var(--line-strong); }
 /* 펼쳐진 select 목록(네이티브 팝업) — 밝게 뜨지 않도록 명시 */
 select option, select optgroup {
   background: var(--elevated);
@@ -198,10 +210,37 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .wsrenamebtn:hover { background: var(--surface); color: var(--text); }
 .wsrename { flex: 1; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--accent, #6b7bff); background: var(--surface); color: var(--text); font-size: 13px; }
 
+/* 코드 스니펫 복사 아이콘(코드블록 우상단) */
+.codewrap { position: relative; }
+.codewrap .code { margin: 0; }
+.codecopybtn { position: absolute; top: 8px; right: 10px; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: var(--elevated, var(--surface)); color: var(--text-faint); cursor: pointer; opacity: 0.75; }
+.codecopybtn:hover { opacity: 1; color: var(--text); background: var(--surface-2, var(--surface)); }
+
 /* Specification 노트 */
 .specnotes { margin: 0 18px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .specnotes > summary { padding: 8px 12px; cursor: pointer; font-weight: 600; font-size: 13px; user-select: none; }
 .specnotestext { width: 100%; box-sizing: border-box; resize: vertical; border: none; border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; padding: 10px 12px; background: transparent; color: var(--text); font: inherit; }
+.notelist { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.noteitem { border: 1px solid var(--line); border-left: 3px solid var(--accent, #6b7bff); border-radius: 6px; padding: 8px 10px; background: var(--surface); }
+.noteitem .notemeta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.noteitem .notetime { font-size: 11px; color: var(--text-faint); }
+.noteitem .notemeta .del { border: none; background: transparent; color: var(--text-faint); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 4px; }
+.noteitem .notemeta .del:hover { color: var(--danger, #c0392b); }
+.noteitem .notebody { margin-top: 4px; white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+.noteadd { display: flex; flex-direction: column; gap: 6px; }
+.noteadd textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.noteadd button { align-self: flex-end; }
+
+/* Import 결과 통계 */
+.importresult { display: flex; flex-direction: column; gap: 6px; }
+.importresult .statrow { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.importresult .statrow span { color: var(--text-dim); font-size: 12px; }
+.importresult .statrow b { font-size: 16px; }
+
+/* API Call Chain — 컬렉션별 트리 구분 */
+.chaincoltree { margin-bottom: 8px; }
+.chaincolname { font-size: 11.5px; font-weight: 700; color: var(--text-dim); padding: 4px 2px; border-top: 1px solid var(--line); margin-top: 4px; }
+.chaincoltree:first-of-type .chaincolname { border-top: none; }
 .wsmenusep { height: 1px; background: var(--line); margin: 5px 4px; }
 .welcomerecents { margin-top: 18px; display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 .wsrecentbtn { text-align: left; background: var(--surface-2); display: flex; align-items: center; justify-content: space-between; }

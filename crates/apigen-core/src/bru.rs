@@ -552,7 +552,7 @@ pub struct BruImport {
 }
 
 /// URL에서 경로만 추출. `{{baseUrl}}/x`→`/x`, `http://host/x?q`→`/x`.
-fn url_to_path(url: &str) -> String {
+pub(crate) fn url_to_path(url: &str) -> String {
     let u = url.trim();
     let after = if let Some(idx) = u.rfind("}}") {
         u[idx + 2..].to_string()
@@ -575,21 +575,186 @@ fn url_to_path(url: &str) -> String {
     }
 }
 
-/// 하위 폴더까지 `.bru` 요청 파일을 수집(environments/·메타파일 제외).
+// ─── Bruno 신형 YAML 포맷(.yml/.yaml) 지원 ───────────────────────────
+// info: { name, type: http, seq } · http: { method, url, headers[], params[], body{type,data} } · docs
+#[derive(serde::Deserialize)]
+struct YamlReq {
+    #[serde(default)]
+    info: Option<YamlInfo>,
+    #[serde(default)]
+    http: Option<YamlHttp>,
+}
+#[derive(serde::Deserialize)]
+struct YamlInfo {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default, rename = "type")]
+    kind: Option<String>,
+    #[serde(default)]
+    seq: Option<i64>,
+}
+#[derive(serde::Deserialize)]
+struct YamlHttp {
+    #[serde(default)]
+    method: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    headers: Vec<YamlKV>,
+    #[serde(default)]
+    params: Vec<YamlParam>,
+    #[serde(default)]
+    body: Option<YamlBody>,
+}
+#[derive(serde::Deserialize)]
+struct YamlKV {
+    name: String,
+    #[serde(default)]
+    value: Option<String>,
+    #[serde(default)]
+    disabled: bool,
+}
+#[derive(serde::Deserialize)]
+struct YamlParam {
+    name: String,
+    #[serde(default)]
+    value: Option<String>,
+    #[serde(default, rename = "type")]
+    kind: Option<String>, // "query" | "path"
+    #[serde(default)]
+    disabled: bool,
+}
+#[derive(serde::Deserialize)]
+struct YamlBody {
+    #[serde(default, rename = "type")]
+    kind: Option<String>, // json | text | xml | formUrlEncoded ...
+    #[serde(default)]
+    data: Option<serde_yaml::Value>,
+}
+
+fn yaml_to_string(v: &serde_yaml::Value) -> String {
+    match v {
+        serde_yaml::Value::String(s) => s.clone(),
+        other => serde_yaml::to_string(other).unwrap_or_default().trim_end().to_string(),
+    }
+}
+
+/// Bruno YAML 환경 파일(`name:` + `variables: [{name,value}]`) → Environment.
+fn parse_yaml_env(text: &str, id: &str) -> Option<Environment> {
+    #[derive(serde::Deserialize)]
+    struct YamlEnv {
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        variables: Vec<YamlKV>,
+    }
+    let y: YamlEnv = serde_yaml::from_str(text).ok()?;
+    let mut variables = BTreeMap::new();
+    for v in y.variables.iter().filter(|v| !v.disabled) {
+        variables.insert(v.name.clone(), v.value.clone().unwrap_or_default());
+    }
+    Some(Environment {
+        id: id.to_string(),
+        name: y.name.unwrap_or_else(|| id.to_string()),
+        variables,
+    })
+}
+
+/// 환경 파일 텍스트 → Environment. Bruno YAML(`variables:`) 우선, 아니면 `.bru` DSL.
+pub fn import_env_auto(text: &str, id: &str) -> Environment {
+    if text.contains("variables:") {
+        if let Some(env) = parse_yaml_env(text, id) {
+            return env;
+        }
+    }
+    parse_env(text, id, id)
+}
+
+/// Bruno YAML 요청 파일 → BruRequest. `http` 블록이 없거나 folder면(비요청) None.
+fn parse_yaml_request(text: &str) -> Option<BruRequest> {
+    let y: YamlReq = serde_yaml::from_str(text).ok()?;
+    if let Some(info) = &y.info {
+        if info.kind.as_deref() == Some("folder") {
+            return None;
+        }
+    }
+    let http = y.http?;
+    let url = http.url.clone().unwrap_or_default();
+    if url.trim().is_empty() {
+        return None;
+    }
+    let name = y.info.as_ref().and_then(|i| i.name.clone()).unwrap_or_default();
+    let seq = y.info.as_ref().and_then(|i| i.seq);
+    let method = http.method.clone().unwrap_or_else(|| "get".into()).to_lowercase();
+
+    let headers = http
+        .headers
+        .iter()
+        .filter(|h| !h.disabled)
+        .map(|h| (h.name.clone(), h.value.clone().unwrap_or_default()))
+        .collect();
+    let mut query = vec![];
+    let mut path_params = vec![];
+    for p in http.params.iter().filter(|p| !p.disabled) {
+        let pair = (p.name.clone(), p.value.clone().unwrap_or_default());
+        if p.kind.as_deref() == Some("path") {
+            path_params.push(pair);
+        } else {
+            query.push(pair);
+        }
+    }
+    let body = match &http.body {
+        Some(b) => {
+            let data = b.data.as_ref().map(yaml_to_string).unwrap_or_default();
+            match b.kind.as_deref() {
+                Some("json") => BruBody::Json(data),
+                _ if !data.trim().is_empty() => BruBody::Text(data),
+                _ => BruBody::None,
+            }
+        }
+        None => BruBody::None,
+    };
+
+    Some(BruRequest {
+        name,
+        seq,
+        method,
+        url,
+        query,
+        path_params,
+        headers,
+        auth: BruAuth::None,
+        body,
+    })
+}
+
+/// 하위 폴더까지 요청 파일(`.bru` + Bruno YAML `.yml`/`.yaml`)을 수집.
+/// environments/·숨김 폴더(.git 등)·메타 파일(folder/collection)은 제외.
 fn collect_bru_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(dir)? {
         let p = entry?.path();
         if p.is_dir() {
-            if p.file_name().map(|n| n == "environments").unwrap_or(false) {
-                continue; // 환경은 따로 처리
+            let dname = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if dname == "environments" || dname == "node_modules" || dname.starts_with('.') {
+                continue;
             }
             collect_bru_files(&p, out)?;
-        } else if p.extension().map(|e| e.eq_ignore_ascii_case("bru")).unwrap_or(false) {
+        } else {
             let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if fname == "collection.bru" || fname == "folder.bru" {
-                continue; // Bruno 메타 파일은 건너뜀
+            let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            if ext == "bru" || ext == "yml" || ext == "yaml" {
+                let stem_meta = fname == "collection.bru"
+                    || fname == "folder.bru"
+                    || fname == "folder.yml"
+                    || fname == "folder.yaml"
+                    || fname == "collection.yml"
+                    || fname == "collection.yaml"
+                    || fname == "bruno.yml"
+                    || fname == "bruno.yaml";
+                if !stem_meta {
+                    out.push(p);
+                }
             }
-            out.push(p);
         }
     }
     Ok(())
@@ -619,7 +784,16 @@ pub fn import_collection(root: &Path) -> Result<BruImport> {
 
     for file in &files {
         let text = fs::read_to_string(file)?;
-        let req = BruRequest::parse(&text);
+        let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let req = if ext == "yml" || ext == "yaml" {
+            // Bruno YAML 포맷. http 블록 없는 파일(설정/워크플로 yml)은 스킵.
+            match parse_yaml_request(&text) {
+                Some(r) => r,
+                None => continue,
+            }
+        } else {
+            BruRequest::parse(&text)
+        };
         if req.url.trim().is_empty() {
             continue;
         }
@@ -696,19 +870,31 @@ pub fn import_collection(root: &Path) -> Result<BruImport> {
         }
     }
 
-    // 환경: <root>/environments/*.bru
+    // 환경: <root>/environments/*.bru + Bruno YAML *.yml/*.yaml
     let mut environments = vec![];
     let env_dir = root.join("environments");
     if env_dir.is_dir() {
         let mut env_files: Vec<PathBuf> = fs::read_dir(&env_dir)?
             .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.extension().map(|e| e.eq_ignore_ascii_case("bru")).unwrap_or(false))
+            .filter(|p| {
+                matches!(
+                    p.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()).as_deref(),
+                    Some("bru") | Some("yml") | Some("yaml")
+                )
+            })
             .collect();
         env_files.sort();
         for p in env_files {
             let text = fs::read_to_string(&p)?;
             let id = p.file_stem().and_then(|n| n.to_str()).unwrap_or("env").to_string();
-            environments.push(parse_env(&text, &id, &id));
+            let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            if ext == "yml" || ext == "yaml" {
+                if let Some(env) = parse_yaml_env(&text, &id) {
+                    environments.push(env);
+                }
+            } else {
+                environments.push(parse_env(&text, &id, &id));
+            }
         }
     }
 
@@ -874,6 +1060,24 @@ paths:
         assert!(text.contains("vars {"));
         let back = parse_env(&text, "local", "Local");
         assert_eq!(back.variables.get("baseUrl").unwrap(), "http://localhost:8080");
+    }
+
+    // Bruno YAML 포맷(.yml) 요청 1개가 정상 import 되는지.
+    #[test]
+    fn import_collection_reads_yaml_requests() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("주문")).unwrap();
+        let yml = "info:\n  name: 주문 목록\n  type: http\n  seq: 1\nhttp:\n  method: POST\n  url: \"{{base}}/api/orders\"\n  headers:\n    - name: Authorization\n      value: Bearer x\n  body:\n    type: json\n    data: |-\n      { \"a\": 1 }\n";
+        std::fs::write(dir.path().join("주문").join("list.yml"), yml).unwrap();
+        // 비요청 yml(워크플로 등)은 무시돼야.
+        std::fs::write(dir.path().join("ci.yml"), "on:\n  push:\njobs: {}\n").unwrap();
+
+        let imported = import_collection(dir.path()).unwrap();
+        let paths = imported.spec.get("paths").and_then(|p| p.as_object()).unwrap();
+        assert_eq!(paths.len(), 1, "YAML 요청 1개만 잡혀야(비요청 yml 제외)");
+        let op = paths.get("/api/orders").and_then(|p| p.get("post")).expect("POST /api/orders");
+        assert_eq!(op.get("x-folder").and_then(|v| v.as_str()), Some("주문"));
+        assert!(op.get("requestBody").is_some(), "body 보존");
     }
 
     // 같은 URL/메서드 요청 2개가 import에서 유실되지 않아야("일부 요청 누락" 버그).

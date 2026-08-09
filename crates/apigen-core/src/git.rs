@@ -187,6 +187,48 @@ pub fn push(root: &Path) -> Result<String> {
 pub fn pull(root: &Path) -> Result<String> {
     run(root, &["pull", "--ff-only"])
 }
+
+/// git stash 항목.
+#[derive(Debug, Serialize)]
+pub struct StashEntry {
+    pub index: usize,
+    pub message: String,
+}
+
+/// 변경사항을 stash에 저장. message 비면 기본 메시지.
+pub fn stash_save(root: &Path, message: &str, include_untracked: bool) -> Result<String> {
+    let mut args = vec!["stash", "push"];
+    if include_untracked {
+        args.push("-u");
+    }
+    if !message.trim().is_empty() {
+        args.push("-m");
+        args.push(message);
+    }
+    run(root, &args)
+}
+/// stash 목록. `stash@{i}: <메시지>` 파싱.
+pub fn stash_list(root: &Path) -> Result<Vec<StashEntry>> {
+    let out = run(root, &["stash", "list"])?;
+    let mut v = vec![];
+    for (i, line) in out.lines().enumerate() {
+        let msg = line.splitn(2, ": ").nth(1).unwrap_or(line).trim().to_string();
+        v.push(StashEntry { index: i, message: msg });
+    }
+    Ok(v)
+}
+/// stash 적용 후 삭제(pop).
+pub fn stash_pop(root: &Path, index: usize) -> Result<String> {
+    run(root, &["stash", "pop", &format!("stash@{{{index}}}")])
+}
+/// stash 적용(유지).
+pub fn stash_apply(root: &Path, index: usize) -> Result<String> {
+    run(root, &["stash", "apply", &format!("stash@{{{index}}}")])
+}
+/// stash 삭제.
+pub fn stash_drop(root: &Path, index: usize) -> Result<String> {
+    run(root, &["stash", "drop", &format!("stash@{{{index}}}")])
+}
 pub fn diff(root: &Path) -> Result<String> {
     run(root, &["diff"])
 }
@@ -315,6 +357,35 @@ mod tests {
         // discard → 원복
         discard(p, "f.txt", false).unwrap();
         assert!(status(p).unwrap().files.is_empty(), "discard 후 clean 이어야 함");
+    }
+
+    #[test]
+    fn stash_save_list_pop_flow() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        init(p).unwrap();
+        run(p, &["config", "user.email", "t@example.com"]).unwrap();
+        run(p, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(p.join("f.txt"), "v1\n").unwrap();
+        stage(p, "f.txt").unwrap();
+        commit(p, "c1").unwrap();
+
+        // 변경 후 stash → clean
+        std::fs::write(p.join("f.txt"), "v2\n").unwrap();
+        stash_save(p, "wip", false).unwrap();
+        assert!(status(p).unwrap().files.is_empty(), "stash 후 clean");
+        let list = stash_list(p).unwrap();
+        assert_eq!(list.len(), 1);
+        assert!(list[0].message.contains("wip"));
+
+        // pop → 변경 복원 + stash 비움
+        stash_pop(p, 0).unwrap();
+        // Windows git의 autocrlf로 \r\n 될 수 있어 줄바꿈 정규화 후 비교.
+        assert_eq!(
+            std::fs::read_to_string(p.join("f.txt")).unwrap().replace("\r\n", "\n"),
+            "v2\n"
+        );
+        assert!(stash_list(p).unwrap().is_empty(), "pop 후 stash 없음");
     }
 
     #[test]

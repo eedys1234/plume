@@ -13,7 +13,8 @@ const ApiCallChain = lazy(() => import("./features/ApiCallChain").then((m) => ({
 const Docs = lazy(() => import("./features/Docs").then((m) => ({ default: m.Docs })));
 const Load = lazy(() => import("./features/Load").then((m) => ({ default: m.Load })));
 const Environments = lazy(() => import("./features/Environments").then((m) => ({ default: m.Environments })));
-const ImportExport = lazy(() => import("./features/ImportExport").then((m) => ({ default: m.ImportExport })));
+const ImportPanel = lazy(() => import("./features/ImportExport").then((m) => ({ default: m.ImportPanel })));
+const ExportPanel = lazy(() => import("./features/ImportExport").then((m) => ({ default: m.ExportPanel })));
 const Git = lazy(() => import("./features/Git").then((m) => ({ default: m.Git })));
 const History = lazy(() => import("./features/History").then((m) => ({ default: m.History })));
 
@@ -57,7 +58,8 @@ export function App() {
     }))
   );
   const [status, setStatus] = useState("");
-  const [showIO, setShowIO] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   const [showDiag, setShowDiag] = useState(false);
   const [showNewWs, setShowNewWs] = useState(false);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
@@ -278,7 +280,8 @@ export function App() {
         {/* 워크스페이스 전환(현재/마지막 워크스페이스명 표시) + 새 워크스페이스 ＋ */}
         <WorkspaceSwitcher onOpenWs={openWorkspace} onNewWs={() => setShowNewWs(true)} onChangeRoot={browseRoot} onRenameWs={renameWorkspaceHandler} />
         {projectRoot && <button className="wsadd" title="새 워크스페이스" onClick={() => setShowNewWs(true)}>＋</button>}
-        {projectDir && <button onClick={() => setShowIO(true)}>⇅ Import / Export</button>}
+        {projectDir && <button onClick={() => setShowImport(true)}>⬇ Import</button>}
+        {projectDir && <button onClick={() => setShowExport(true)}>⬆ Export</button>}
         <span className="spacer" />
         {/* 업데이트: 사용 가능하면 강조 버튼, 아니면 버전칩(클릭=재확인) */}
         {update && needsUpdate(update.info) ? (
@@ -378,15 +381,29 @@ export function App() {
 
       <Toast />
 
-      {showIO && (
-        <div className="modalbg" onClick={() => setShowIO(false)}>
+      {showImport && (
+        <div className="modalbg" onClick={() => setShowImport(false)}>
           <div className="modal iomodal" onClick={(e) => e.stopPropagation()}>
             <div className="iomodalhead">
-              <h3>Import / Export</h3>
-              <button onClick={() => setShowIO(false)}>닫기</button>
+              <h3>⬇ Import</h3>
+              <button onClick={() => setShowImport(false)}>닫기</button>
             </div>
             <Suspense fallback={<div className="hint" style={{ padding: 20 }}>로딩 중…</div>}>
-              <ImportExport />
+              <ImportPanel />
+            </Suspense>
+          </div>
+        </div>
+      )}
+
+      {showExport && (
+        <div className="modalbg" onClick={() => setShowExport(false)}>
+          <div className="modal iomodal" onClick={(e) => e.stopPropagation()}>
+            <div className="iomodalhead">
+              <h3>⬆ Export</h3>
+              <button onClick={() => setShowExport(false)}>닫기</button>
+            </div>
+            <Suspense fallback={<div className="hint" style={{ padding: 20 }}>로딩 중…</div>}>
+              <ExportPanel />
             </Suspense>
           </div>
         </div>

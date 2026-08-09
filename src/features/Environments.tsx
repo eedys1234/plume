@@ -2,15 +2,17 @@
 import { useState } from "react";
 import { useStore } from "../store";
 import { useShallow } from "zustand/react/shallow";
+import { api } from "../ipc";
+import { pickOpenFile } from "../dialog";
 
 export function Environments() {
   const {
-    environments, activeEnvId, setActiveEnv,
+    environments, activeEnvId, setActiveEnv, setEnvironments,
     addEnvironment, removeEnvironment, renameEnvironment,
     setVariable, removeVariable, projectDir, persistClient,
   } = useStore(
     useShallow((s) => ({
-      environments: s.environments, activeEnvId: s.activeEnvId, setActiveEnv: s.setActiveEnv,
+      environments: s.environments, activeEnvId: s.activeEnvId, setActiveEnv: s.setActiveEnv, setEnvironments: s.setEnvironments,
       addEnvironment: s.addEnvironment, removeEnvironment: s.removeEnvironment, renameEnvironment: s.renameEnvironment,
       setVariable: s.setVariable, removeVariable: s.removeVariable, projectDir: s.projectDir, persistClient: s.persistClient,
     }))
@@ -33,13 +35,40 @@ export function Environments() {
     }
   }
 
+  // Bruno(.yml/.bru) 또는 Postman(.json) 환경 파일 → 환경 추가.
+  async function importEnv() {
+    const path = await pickOpenFile("환경 파일 (Bruno/Postman)", ["json", "yml", "yaml", "bru"]);
+    if (!path) return;
+    try {
+      const text = await api.readTextFile(path);
+      if (!text) return setMsg("파일을 읽지 못했습니다");
+      const base = (path.split(/[\\/]/).pop() || "env").replace(/\.(json|ya?ml|bru)$/i, "") || "imported";
+      const existing = new Set(useStore.getState().environments.map((e) => e.id));
+      let uid = base, n = 2;
+      while (existing.has(uid)) uid = `${base}-${n++}`;
+      const isJson = /\.json$/i.test(path);
+      const env = isJson
+        ? await api.importPostmanEnvironment(text, uid)
+        : await api.importBrunoEnvironment(text, uid);
+      setEnvironments([...useStore.getState().environments, env]);
+      setActiveEnv(env.id);
+      if (projectDir) { try { await persistClient(projectDir); } catch { /* 저장 실패 무시 */ } }
+      setMsg(`✓ 환경 가져옴: ${env.name} (${Object.keys(env.variables).length} vars · ${isJson ? "Postman" : "Bruno"})`);
+    } catch (e: any) {
+      setMsg(`가져오기 실패: ${e?.message ?? e}`);
+    }
+  }
+
   return (
     <div className="builder">
       {/* 좌: 환경 목록 */}
       <aside className="nav">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <h3 style={{ margin: 0 }}>Environments</h3>
-          <button onClick={addEnvironment}>＋ 새 환경</button>
+          <div className="row" style={{ gap: 4 }}>
+            <button onClick={importEnv} title="Bruno(.yml/.bru) / Postman(.json) 환경 가져오기">⬇ 가져오기</button>
+            <button onClick={addEnvironment}>＋ 새 환경</button>
+          </div>
         </div>
         <ul className="oplist">
           {environments.map((e) => (

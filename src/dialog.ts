@@ -9,6 +9,17 @@ export async function pickDirectory(): Promise<string | null> {
   }
 }
 
+// 네이티브 파일 열기(단일). ext 필터 지정. 경로 반환, 취소/비-Tauri면 null.
+export async function pickOpenFile(name: string, exts: string[]): Promise<string | null> {
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const res = await open({ multiple: false, directory: false, filters: [{ name, extensions: exts }] });
+    return typeof res === "string" ? res : null;
+  } catch {
+    return null;
+  }
+}
+
 // 네이티브 경고/확인 다이얼로그(OK/취소). true=OK. Tauri 밖이면 window.confirm 폴백.
 export async function confirmWarn(message: string, title = "경고"): Promise<boolean> {
   try {
