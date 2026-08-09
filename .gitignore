@@ -5,3 +5,5 @@ src-tauri/plume-update.key
 node_modules/
 
 target
+
+dist

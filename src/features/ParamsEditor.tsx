@@ -73,7 +73,7 @@ export function ParamsEditor({
               <td>
                 <select value={p.schema?.type ?? "string"} onChange={(e) => setType(i, e.target.value)}>
                   {TYPES.map((t) => (
-                    <option key={t}>{t}</option>
+                    <option key={t} value={t}>{t[0].toUpperCase() + t.slice(1)}</option>
                   ))}
                 </select>
               </td>

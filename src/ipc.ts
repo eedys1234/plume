@@ -96,6 +96,8 @@ export interface HttpResponse {
   bodyJson?: unknown;
   elapsedMs: number;
   sizeBytes: number;
+  isBinary: boolean;
+  bodyBytes?: number[]; // 바이너리일 때만 원본 바이트
 }
 
 export const api = {

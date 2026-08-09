@@ -38,7 +38,7 @@ const BUILDER_TABS: { id: BuilderTab; label: string }[] = [
   { id: "design", label: "Design" },
   { id: "call", label: "API Call Chain" },
   { id: "load", label: "Run" },
-  { id: "docs", label: "Docs" },
+  { id: "docs", label: "Specification" },
 ];
 
 export function App() {

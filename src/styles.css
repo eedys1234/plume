@@ -442,6 +442,34 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .respbar { display: flex; align-items: center; gap: 12px; padding: 8px 18px; border-top: 1px solid var(--line); background: var(--surface); }
 .resppanel { display: flex; flex-direction: column; overflow: hidden; border-top: 1px solid var(--line-strong); }
 .resppanel .respbar { border-top: none; }
+.binbadge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--warn, #b26b00); color: #fff; }
+
+/* 💬 Docs 메모 */
+.comments { display: flex; flex-direction: column; gap: 10px; }
+.cmthead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cmthead .cmtauthor { width: 160px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+.cmthead .cmtshowres { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 12px; }
+.cmtcomposer { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.cmtcomposer select { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+.cmtcomposer textarea { width: 100%; resize: vertical; }
+.cmtcomposerbar { justify-content: flex-end; }
+.cmtitem { padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--accent, #6b7bff); border-radius: 8px; background: var(--surface); }
+.cmtitem.resolved { opacity: 0.6; border-left-color: var(--ok, #2e9e5b); }
+.cmttarget { font-size: 11px; font-weight: 700; color: var(--muted, #888); margin-bottom: 4px; }
+.cmtmeta { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.cmtmeta .cmttime { color: var(--muted, #888); font-size: 11px; }
+.cmtmeta .cmtactions { margin-left: auto; display: flex; gap: 4px; }
+.cmtmeta .cmtactions button { padding: 1px 8px; font-size: 11px; border-radius: 5px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
+.cmtmeta .cmtactions button:hover { background: var(--accent-weak, var(--line)); }
+.cmtmeta .cmtactions button.danger:hover { background: var(--danger, #c0392b); color: #fff; }
+.cmtbody { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+.cmtreply { margin: 8px 0 0 14px; padding: 6px 10px; border-left: 2px solid var(--line); }
+.cmtreplybox { margin: 8px 0 0 14px; display: flex; flex-direction: column; gap: 6px; }
+.cmtreplybox textarea { width: 100%; resize: vertical; }
+.respdl { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.respdl select { padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 12px; }
+.respdl button { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; font-size: 12px; }
+.respdl button:hover { background: var(--accent-weak, var(--line)); }
 .resppanel .respbody { flex: 1; min-height: 0; max-height: none; }
 .respbody { margin: 0; border: none; border-top: 1px solid var(--line); border-radius: 0; }
 

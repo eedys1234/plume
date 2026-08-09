@@ -1,6 +1,6 @@
 // Bruno식 요청 중심 뷰: URL바(method+url+Send) + 서브탭(Params/Body/Headers/Auth/Responses/Docs) + 응답.
 // key={activeTab}로 마운트되므로 로컬 상태는 해당 operation에서 새로 초기화된다.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type AuthSpec, type HttpRequestSpec, type HttpResponse } from "../ipc";
 import { useStore } from "../store";
 import { runScript, type BruApi } from "../script";
@@ -8,6 +8,49 @@ import { SchemaEditor } from "./SchemaEditor";
 import { ParamsEditor } from "./ParamsEditor";
 import { ExamplesEditor } from "./ExamplesEditor";
 import { Resizer, usePersistedSize } from "./Resizer";
+import { pickSavePath } from "../dialog";
+import {
+  commentsFor,
+  fieldPaths,
+  authorName,
+  setAuthorName,
+  newId,
+  targetLabel,
+  fmtTime,
+  type Comment,
+} from "../comments";
+
+// 응답 헤더에서 저장 파일명/확장자 추정(Content-Disposition → Content-Type 순).
+function guessDownload(resp: HttpResponse): { filename: string; ext: string } {
+  const h = (name: string) =>
+    resp.headers.find(([k]) => k.toLowerCase() === name)?.[1] ?? "";
+  const cd = h("content-disposition");
+  const m = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+  if (m) {
+    let fn = m[1].trim();
+    try { fn = decodeURIComponent(fn); } catch { /* 그대로 사용 */ }
+    return { filename: fn, ext: (fn.split(".").pop() || "bin").toLowerCase() };
+  }
+  const ct = h("content-type").toLowerCase();
+  const ext =
+    ct.includes("spreadsheet") || ct.includes("excel") ? "xlsx"
+    : ct.includes("wordprocessing") || ct.includes("msword") ? "docx"
+    : ct.includes("presentation") ? "pptx"
+    : ct.includes("pdf") ? "pdf"
+    : ct.includes("zip") ? "zip"
+    : ct.includes("csv") ? "csv"
+    : ct.includes("png") ? "png"
+    : ct.includes("jpeg") || ct.includes("jpg") ? "jpg"
+    : ct.includes("gif") ? "gif"
+    : ct.includes("svg") ? "svg"
+    : ct.includes("json") ? "json"
+    : ct.includes("octet") ? "bin"
+    : "bin";
+  return { filename: `response.${ext}`, ext };
+}
+
+// 다운로드 형식(확장자) 후보. 추정값을 맨 앞에 두고 중복 제거.
+const DL_EXTS = ["xlsx", "csv", "pdf", "zip", "docx", "png", "jpg", "svg", "json", "txt", "bin"];
 
 const CONTENT_TYPES = [
   "application/json",
@@ -17,7 +60,20 @@ const CONTENT_TYPES = [
   "application/xml",
 ];
 const HTTP_METHODS = ["get", "post", "put", "delete", "patch", "head", "options"];
-type Sub = "params" | "body" | "headers" | "auth" | "script" | "responses" | "info" | "code";
+// 표준/자주 쓰는 HTTP 헤더 — 키 입력 자동완성용.
+const HTTP_HEADERS = [
+  "Accept", "Accept-Charset", "Accept-Encoding", "Accept-Language",
+  "Authorization", "Cache-Control", "Connection", "Content-Encoding",
+  "Content-Language", "Content-Length", "Content-Type", "Cookie",
+  "Date", "ETag", "Expect", "Forwarded", "From", "Host", "If-Match",
+  "If-Modified-Since", "If-None-Match", "If-Range", "If-Unmodified-Since",
+  "Origin", "Pragma", "Prefer", "Proxy-Authorization", "Range", "Referer",
+  "TE", "Trailer", "Transfer-Encoding", "Upgrade", "User-Agent", "Via", "Warning",
+  "X-Api-Key", "X-Auth-Token", "X-Correlation-ID", "X-CSRF-Token",
+  "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-IP",
+  "X-Request-ID", "X-Requested-With",
+];
+type Sub = "params" | "body" | "headers" | "auth" | "script" | "responses" | "info" | "code" | "docs";
 
 // 타입 → 샘플 값 (스키마 필드 추가 시 본문 JSON에 넣을 값).
 function sampleForType(type?: string): any {
@@ -151,6 +207,7 @@ export function RequestView({ path, method }: { path: string; method: string }) 
     kind: "none", token: "{{token}}", username: "", password: "",
   });
   const [resp, setResp] = useState<HttpResponse | null>(null);
+  const [dlExt, setDlExt] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [scriptLogs, setScriptLogs] = useState<string[]>([]);
@@ -302,6 +359,7 @@ export function RequestView({ path, method }: { path: string; method: string }) 
         activeEnv()
       );
       setResp(r);
+      setDlExt(guessDownload(r).ext); // 응답마다 추정 확장자로 초기화
 
       // Post-response Script
       const post = op["x-post-response-script"];
@@ -324,6 +382,24 @@ export function RequestView({ path, method }: { path: string; method: string }) 
       setScriptLogs(logs);
     } finally {
       setBusy(false);
+    }
+  }
+
+  // 응답 본문을 파일로 저장. 바이너리면 원본 바이트, 텍스트면 UTF-8 인코딩.
+  async function downloadResponse(ext: string) {
+    if (!resp) return;
+    const base = (op.summary || op.operationId || "response").replace(/[^\w.-]+/g, "-");
+    const dest = await pickSavePath(`${base}.${ext}`, ext);
+    if (!dest) return; // 취소 또는 브라우저 미리보기(비-Tauri)
+    const bytes =
+      resp.isBinary && resp.bodyBytes
+        ? resp.bodyBytes
+        : Array.from(new TextEncoder().encode(resp.bodyText));
+    try {
+      await api.writeBytesFile(dest, bytes);
+      setMsg(`저장됨: ${dest}`);
+    } catch (e: any) {
+      setMsg(`저장 실패: ${e?.message ?? e}`);
     }
   }
 
@@ -405,15 +481,16 @@ export function RequestView({ path, method }: { path: string; method: string }) 
 
       {/* 서브탭 */}
       <div className="reqsubtabs">
-        {(["info", "params", "body", "headers", "auth", "script", "responses", "code"] as Sub[]).map((s) => (
+        {(["info", "params", "body", "headers", "auth", "script", "responses", "code", "docs"] as Sub[]).map((s) => (
           <button key={s} className={sub === s ? "st active" : "st"} onClick={() => setSub(s)}>
-            {s === "info" ? "Info" : s === "code" ? "</>Code" : s[0].toUpperCase() + s.slice(1)}
+            {s === "info" ? "Info" : s === "code" ? "</>Code" : s === "docs" ? "💬 Docs" : s[0].toUpperCase() + s.slice(1)}
             {s === "params" && dot(params.length > 0)}
             {s === "body" && dot(!!op.requestBody)}
             {s === "headers" && dot(headers.length > 0)}
             {s === "auth" && dot(auth.kind !== "none")}
             {s === "script" && dot(!!op["x-pre-request-script"] || !!op["x-post-response-script"])}
             {s === "responses" && dot(Object.keys(op.responses ?? {}).length > 0)}
+            {s === "docs" && dot(commentsFor(spec, path, method).some((c) => !c.resolved))}
           </button>
         ))}
       </div>
@@ -559,6 +636,7 @@ export function RequestView({ path, method }: { path: string; method: string }) 
             </pre>
           </div>
         )}
+        {sub === "docs" && <CommentsPanel path={path} method={method} />}
       </div>
 
       {/* 응답 — 위 손잡이로 높이 조절 가능 */}
@@ -572,6 +650,19 @@ export function RequestView({ path, method }: { path: string; method: string }) 
                 <>
                   <span className={`respstatus s${Math.floor(resp.status / 100)}`}>{resp.status} {resp.statusText}</span>
                   <span className="status">{resp.elapsedMs}ms · {resp.sizeBytes}B</span>
+                  {resp.isBinary && <span className="binbadge">바이너리</span>}
+                  <span className="respdl">
+                    <select
+                      value={dlExt}
+                      title="다운로드 형식(확장자)"
+                      onChange={(e) => setDlExt(e.target.value)}
+                    >
+                      {[...new Set([dlExt, ...DL_EXTS].filter(Boolean))].map((x) => (
+                        <option key={x} value={x}>.{x}</option>
+                      ))}
+                    </select>
+                    <button onClick={() => downloadResponse(dlExt || "bin")}>⬇ 다운로드</button>
+                  </span>
                 </>
               )}
             </div>
@@ -609,13 +700,17 @@ function HeadersEditor({ value, onChange }: { value: any[] | undefined; onChange
   const remove = (i: number) => onChange(headers.filter((_, j) => j !== i));
   return (
     <div className="schemaeditor">
+      {/* HTTP 헤더 자동완성 목록 */}
+      <datalist id="http-header-keys">
+        {HTTP_HEADERS.map((hdr) => <option key={hdr} value={hdr} />)}
+      </datalist>
       <table className="fieldtable">
         <thead><tr><th>Key</th><th>Value</th><th>필수</th><th /></tr></thead>
         <tbody>
           {headers.length === 0 && <tr><td colSpan={4} className="hint">헤더 없음</td></tr>}
           {headers.map((h, i) => (
             <tr key={i}>
-              <td><input value={h.name ?? ""} onChange={(e) => set(i, { name: e.target.value })} /></td>
+              <td><input list="http-header-keys" value={h.name ?? ""} placeholder="헤더 키" onChange={(e) => set(i, { name: e.target.value })} /></td>
               <td><input value={h.example ?? ""} onChange={(e) => set(i, { example: e.target.value || undefined })} /></td>
               <td className="c"><input type="checkbox" checked={!!h.required} onChange={(e) => set(i, { required: e.target.checked })} /></td>
               <td className="c"><button className="del" onClick={() => remove(i)}>×</button></td>
@@ -737,6 +832,177 @@ function ResponsesEditor({ path, method }: { path: string; method: string }) {
           <textarea rows={8} value={exText} onChange={(e) => setExample(e.target.value)} placeholder='{ "id": "usr_1" }' />
         </div>
       )}
+    </div>
+  );
+}
+
+// 💬 Docs — 이 오퍼레이션(및 필드)에 대한 Figma식 메모 스레드.
+// 스펙의 x-comments에 저장되어 저장/불러오기·git으로 공유된다.
+function CommentsPanel({ path, method }: { path: string; method: string }) {
+  const { spec, updateSpec } = useStore();
+  const op = spec.paths?.[path]?.[method] ?? {};
+  const list = commentsFor(spec, path, method);
+  const paths = useMemo(() => fieldPaths(op), [op]);
+
+  const [author, setAuthorState] = useState(authorName());
+  const [target, setTarget] = useState("");
+  const [body, setBody] = useState("");
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [showResolved, setShowResolved] = useState(false);
+
+  function saveAuthor(v: string) {
+    setAuthorState(v);
+    setAuthorName(v);
+  }
+
+  // x-comments 배열을 안전하게 수정(비면 키 제거).
+  function mutate(fn: (arr: Comment[]) => void) {
+    updateSpec((d: any) => {
+      if (!Array.isArray(d["x-comments"])) d["x-comments"] = [];
+      fn(d["x-comments"]);
+      if (d["x-comments"].length === 0) delete d["x-comments"];
+    });
+  }
+
+  function add() {
+    const text = body.trim();
+    if (!text) return;
+    const c: Comment = {
+      id: newId(),
+      path,
+      method,
+      field: target || undefined,
+      author: author.trim() || "익명",
+      body: text,
+      createdAt: new Date().toISOString(),
+      replies: [],
+    };
+    mutate((arr) => arr.push(c));
+    setBody("");
+  }
+  function addReply(id: string) {
+    const text = replyText.trim();
+    if (!text) return;
+    mutate((arr) => {
+      const c = arr.find((x) => x.id === id);
+      if (c) (c.replies ??= []).push({ id: newId("r"), author: author.trim() || "익명", body: text, createdAt: new Date().toISOString() });
+    });
+    setReplyText("");
+    setReplyTo(null);
+  }
+  function toggleResolved(id: string) {
+    mutate((arr) => {
+      const c = arr.find((x) => x.id === id);
+      if (c) c.resolved = !c.resolved;
+    });
+  }
+  function del(id: string) {
+    mutate((arr) => {
+      const i = arr.findIndex((x) => x.id === id);
+      if (i >= 0) arr.splice(i, 1);
+    });
+  }
+  function delReply(cid: string, rid: string) {
+    mutate((arr) => {
+      const c = arr.find((x) => x.id === cid);
+      if (c?.replies) c.replies = c.replies.filter((r) => r.id !== rid);
+    });
+  }
+
+  const openCount = list.filter((c) => !c.resolved).length;
+  const visible = list.filter((c) => showResolved || !c.resolved);
+
+  return (
+    <div className="comments">
+      <div className="cmthead">
+        <input
+          className="cmtauthor"
+          value={author}
+          placeholder="작성자 이름"
+          onChange={(e) => saveAuthor(e.target.value)}
+          title="이 이름으로 메모가 남습니다 (이 PC에 저장)"
+        />
+        <span className="hint tiny">메모는 스펙과 함께 저장되어 git으로 공유됩니다 (pull 시 반영).</span>
+        <label className="cmtshowres">
+          <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
+          해결됨 표시
+        </label>
+      </div>
+
+      {/* 새 메모 작성 */}
+      <div className="cmtcomposer">
+        <div className="row">
+          <select value={target} onChange={(e) => setTarget(e.target.value)} title="메모 대상">
+            <option value="">이 API (전체)</option>
+            {paths.map((p) => (
+              <option key={p} value={p}>{targetLabel(p)}</option>
+            ))}
+          </select>
+        </div>
+        <textarea
+          rows={2}
+          value={body}
+          placeholder="메모를 입력하고 Ctrl+Enter로 추가"
+          onChange={(e) => setBody(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) add();
+          }}
+        />
+        <div className="row cmtcomposerbar">
+          <button disabled={!body.trim()} onClick={add}>💬 메모 추가</button>
+        </div>
+      </div>
+
+      {/* 스레드 목록 */}
+      {visible.length === 0 && <p className="hint tiny">{openCount === 0 ? "아직 메모가 없습니다." : "표시할 메모가 없습니다."}</p>}
+      {visible.map((c) => (
+        <div key={c.id} className={c.resolved ? "cmtitem resolved" : "cmtitem"}>
+          <div className="cmttarget">{targetLabel(c.field)}</div>
+          <div className="cmtmeta">
+            <strong>{c.author}</strong>
+            <span className="cmttime">{fmtTime(c.createdAt)}</span>
+            <span className="cmtactions">
+              <button onClick={() => toggleResolved(c.id)}>{c.resolved ? "다시 열기" : "해결"}</button>
+              <button onClick={() => setReplyTo(replyTo === c.id ? null : c.id)}>답글</button>
+              <button className="danger" onClick={() => del(c.id)} title="삭제">🗑</button>
+            </span>
+          </div>
+          <div className="cmtbody">{c.body}</div>
+
+          {(c.replies ?? []).map((r) => (
+            <div key={r.id} className="cmtreply">
+              <div className="cmtmeta">
+                <strong>{r.author}</strong>
+                <span className="cmttime">{fmtTime(r.createdAt)}</span>
+                <span className="cmtactions">
+                  <button className="danger" onClick={() => delReply(c.id, r.id)} title="답글 삭제">🗑</button>
+                </span>
+              </div>
+              <div className="cmtbody">{r.body}</div>
+            </div>
+          ))}
+
+          {replyTo === c.id && (
+            <div className="cmtreplybox">
+              <textarea
+                rows={2}
+                value={replyText}
+                placeholder="답글 입력 후 Ctrl+Enter"
+                autoFocus
+                onChange={(e) => setReplyText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) addReply(c.id);
+                }}
+              />
+              <div className="row">
+                <button disabled={!replyText.trim()} onClick={() => addReply(c.id)}>답글 추가</button>
+                <button onClick={() => { setReplyTo(null); setReplyText(""); }}>취소</button>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

@@ -46,6 +46,13 @@ pub struct ProjectFile {
     pub info: openapiv3::Info,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub servers: Vec<openapiv3::Server>,
+    /// Figma식 메모(코멘트) 목록. 루트 `x-comments`로 왕복하며 git으로 공유된다.
+    #[serde(
+        default,
+        rename = "x-comments",
+        skip_serializing_if = "serde_json::Value::is_null"
+    )]
+    pub x_comments: serde_json::Value,
 }
 
 fn default_openapi_version() -> String {

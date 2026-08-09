@@ -76,6 +76,42 @@ pub struct HttpResponse {
     pub body_json: Option<serde_json::Value>,
     pub elapsed_ms: u128,
     pub size_bytes: usize,
+    /// 바이너리 응답 여부(엑셀·zip·pdf·이미지 등).
+    pub is_binary: bool,
+    /// 바이너리일 때만 원본 바이트(다운로드용). 텍스트면 비어 있음.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub body_bytes: Vec<u8>,
+}
+
+/// content-type/바이트로 바이너리 여부 판정.
+fn looks_binary(content_type: &str, bytes: &[u8]) -> bool {
+    let ct = content_type.to_lowercase();
+    if ct.starts_with("text/")
+        || ct.contains("json")
+        || ct.contains("xml")
+        || ct.contains("javascript")
+        || ct.contains("x-www-form-urlencoded")
+        || ct.contains("csv")
+        || ct.contains("html")
+    {
+        return false;
+    }
+    if ct.contains("octet-stream")
+        || ct.contains("zip")
+        || ct.contains("pdf")
+        || ct.starts_with("image/")
+        || ct.starts_with("audio/")
+        || ct.starts_with("video/")
+        || ct.contains("excel")
+        || ct.contains("spreadsheet")
+        || ct.contains("officedocument")
+        || ct.contains("msword")
+        || ct.contains("download")
+    {
+        return true;
+    }
+    // 애매하면 널 바이트/비UTF-8이면 바이너리로 본다.
+    bytes.contains(&0) || std::str::from_utf8(bytes).is_err()
 }
 
 /// `{{var}}`를 치환하고, 해결되지 않은 변수명 목록을 함께 반환.
@@ -192,18 +228,38 @@ pub fn send(req: &HttpRequest, env: &Environment) -> Result<HttpResponse> {
         .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
         .collect();
 
-    let body_text = resp.text().map_err(|e| CoreError::Http(e.to_string()))?;
+    let content_type = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let bytes = resp.bytes().map_err(|e| CoreError::Http(e.to_string()))?;
     let elapsed_ms = started.elapsed().as_millis();
-    let body_json = serde_json::from_str(&body_text).ok();
+    let size_bytes = bytes.len();
+    let is_binary = looks_binary(&content_type, &bytes);
+
+    let (body_text, body_json, body_bytes) = if is_binary {
+        (
+            format!("(바이너리 응답 · {size_bytes} bytes · 아래에서 다운로드)"),
+            None,
+            bytes.to_vec(),
+        )
+    } else {
+        let text = String::from_utf8_lossy(&bytes).to_string();
+        let json = serde_json::from_str(&text).ok();
+        (text, json, Vec::new())
+    };
 
     Ok(HttpResponse {
         status: status.as_u16(),
         status_text: status.canonical_reason().unwrap_or("").to_string(),
-        size_bytes: body_text.len(),
+        size_bytes,
         headers,
         body_text,
         body_json,
         elapsed_ms,
+        is_binary,
+        body_bytes,
     })
 }
 

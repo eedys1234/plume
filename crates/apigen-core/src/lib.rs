@@ -337,6 +337,31 @@ paths:
     }
 
     #[test]
+    fn comments_survive_split_bundle() {
+        // 루트 x-comments(메모)가 split→bundle 왕복에서 보존되는지.
+        let spec = import_spec(
+            "openapi: 3.0.3\ninfo: { title: C, version: \"1\" }\npaths:\n  /c:\n    get: { summary: gc, responses: { \"200\": { description: ok } } }\n",
+            Some(Format::Yaml),
+        ).unwrap();
+        let mut spec = spec;
+        spec.extensions.insert(
+            "x-comments".to_string(),
+            serde_json::json!([{
+                "id": "c_1", "path": "/c", "method": "get",
+                "author": "geo", "body": "확인 필요", "createdAt": "2026-01-01T00:00:00Z"
+            }]),
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        split(dir.path(), &spec).unwrap();
+        let (loaded, _w) = bundle(dir.path()).unwrap();
+
+        let cm = loaded.extensions.get("x-comments").expect("x-comments 보존돼야");
+        assert_eq!(cm[0]["body"], serde_json::json!("확인 필요"));
+        assert_eq!(cm[0]["path"], serde_json::json!("/c"));
+    }
+
+    #[test]
     fn markdown_contains_endpoint() {
         let md = to_markdown(&sample_spec(), &MarkdownOptions::default());
         assert!(md.contains("# Sample API"));

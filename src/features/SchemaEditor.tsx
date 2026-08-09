@@ -118,7 +118,7 @@ export function SchemaEditor({
                   </td>
                   <td>
                     <select value={f.type ?? "string"} onChange={(e) => changeType(name, e.target.value)}>
-                      {TYPES.map((t) => <option key={t}>{t}</option>)}
+                      {TYPES.map((t) => <option key={t} value={t}>{t[0].toUpperCase() + t.slice(1)}</option>)}
                     </select>
                   </td>
                   <td>
@@ -192,7 +192,7 @@ export function SchemaEditor({
                               setFieldSchema(name, { ...f, items: it });
                             }}
                           >
-                            {TYPES.map((t) => <option key={t}>{t}</option>)}
+                            {TYPES.map((t) => <option key={t} value={t}>{t[0].toUpperCase() + t.slice(1)}</option>)}
                           </select>
                         </div>
                         {itemIsObj && (
