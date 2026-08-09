@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type AuthSpec, type HttpRequestSpec, type HttpResponse } from "../ipc";
 import { useStore } from "../store";
+import { useShallow } from "zustand/react/shallow";
 import { runScript, type BruApi } from "../script";
 import { SchemaEditor } from "./SchemaEditor";
 import { ParamsEditor } from "./ParamsEditor";
@@ -144,7 +145,12 @@ function sampleFromSchema(s: any, cur?: any): any {
 }
 
 export function RequestView({ path, method }: { path: string; method: string }) {
-  const { spec, updateSpec, activeEnv, activeEnvId, setVariable, runtimeVars, setRuntimeVar, openTab, closeTab } = useStore();
+  const { spec, updateSpec, activeEnv, activeEnvId, setVariable, runtimeVars, setRuntimeVar, openTab, closeTab } = useStore(
+    useShallow((s) => ({
+      spec: s.spec, updateSpec: s.updateSpec, activeEnv: s.activeEnv, activeEnvId: s.activeEnvId,
+      setVariable: s.setVariable, runtimeVars: s.runtimeVars, setRuntimeVar: s.setRuntimeVar, openTab: s.openTab, closeTab: s.closeTab,
+    }))
+  );
   const op = spec.paths?.[path]?.[method];
   const edit = (fn: (o: any) => void) => updateSpec((d) => fn(d.paths[path][method]));
 
@@ -739,7 +745,7 @@ const COMMON_STATUS: [string, string][] = [
 const MT_JSON = "application/json";
 
 function ResponsesEditor({ path, method }: { path: string; method: string }) {
-  const { spec, updateSpec } = useStore();
+  const { spec, updateSpec } = useStore(useShallow((s) => ({ spec: s.spec, updateSpec: s.updateSpec })));
   const op = spec.paths[path][method];
   const edit = (fn: (o: any) => void) => updateSpec((d) => fn(d.paths[path][method]));
   const statuses = Object.keys(op.responses ?? {});
@@ -839,7 +845,7 @@ function ResponsesEditor({ path, method }: { path: string; method: string }) {
 // 💬 Docs — 이 오퍼레이션(및 필드)에 대한 Figma식 메모 스레드.
 // 스펙의 x-comments에 저장되어 저장/불러오기·git으로 공유된다.
 function CommentsPanel({ path, method }: { path: string; method: string }) {
-  const { spec, updateSpec } = useStore();
+  const { spec, updateSpec } = useStore(useShallow((s) => ({ spec: s.spec, updateSpec: s.updateSpec })));
   const op = spec.paths?.[path]?.[method] ?? {};
   const list = commentsFor(spec, path, method);
   const paths = useMemo(() => fieldPaths(op), [op]);

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../ipc";
 import { tabKey, useStore, type Target } from "../store";
+import { useShallow } from "zustand/react/shallow";
 import { CollectionTree, type TreeMenuItem } from "./CollectionTree";
 import { RequestView } from "./RequestView";
 import { Resizer, usePersistedSize } from "./Resizer";
@@ -31,7 +32,17 @@ export function Builder() {
     collections, activeCollectionId, setActiveCollection, addCollection, removeCollection,
     environments, activeEnvId, setActiveEnv,
     openTabs, activeTab, openTab, closeTab, setActiveTab, projectDir, logEvent,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({
+      spec: s.spec, updateSpec: s.updateSpec, diagnostics: s.diagnostics, clipboard: s.clipboard,
+      copyRequest: s.copyRequest, copyFolder: s.copyFolder, pasteInto: s.pasteInto,
+      collections: s.collections, activeCollectionId: s.activeCollectionId, setActiveCollection: s.setActiveCollection,
+      addCollection: s.addCollection, removeCollection: s.removeCollection,
+      environments: s.environments, activeEnvId: s.activeEnvId, setActiveEnv: s.setActiveEnv,
+      openTabs: s.openTabs, activeTab: s.activeTab, openTab: s.openTab, closeTab: s.closeTab,
+      setActiveTab: s.setActiveTab, projectDir: s.projectDir, logEvent: s.logEvent,
+    }))
+  );
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [branch, setBranch] = useState("");
   const [search, setSearch] = useState("");

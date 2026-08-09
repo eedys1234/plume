@@ -9,7 +9,7 @@ const isUntracked = (f: GitFileStatus) => f.status === "??";
 
 export function Git() {
   // Git은 상단 "📁 폴더 열기"로 지정한 작업 폴더(projectDir)를 그대로 사용한다.
-  const { projectDir } = useStore();
+  const projectDir = useStore((s) => s.projectDir);
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [log, setLog] = useState<GitCommit[]>([]);
   const [branches, setBranches] = useState<string[]>([]);

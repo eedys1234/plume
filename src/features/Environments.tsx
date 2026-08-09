@@ -1,13 +1,20 @@
 // Environment 탭: 환경 목록(좌) + 변수 편집(우). {{key}}로 참조.
 import { useState } from "react";
 import { useStore } from "../store";
+import { useShallow } from "zustand/react/shallow";
 
 export function Environments() {
   const {
     environments, activeEnvId, setActiveEnv,
     addEnvironment, removeEnvironment, renameEnvironment,
     setVariable, removeVariable, projectDir, persistClient,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({
+      environments: s.environments, activeEnvId: s.activeEnvId, setActiveEnv: s.setActiveEnv,
+      addEnvironment: s.addEnvironment, removeEnvironment: s.removeEnvironment, renameEnvironment: s.renameEnvironment,
+      setVariable: s.setVariable, removeVariable: s.removeVariable, projectDir: s.projectDir, persistClient: s.persistClient,
+    }))
+  );
   const env = environments.find((e) => e.id === activeEnvId);
   const [nk, setNk] = useState("");
   const [nv, setNv] = useState("");

@@ -5,6 +5,7 @@ import mermaid from "mermaid";
 import { api } from "../ipc";
 import { pickSavePath } from "../dialog";
 import { listOperations, useStore, type Chain } from "../store";
+import { useShallow } from "zustand/react/shallow";
 import { CollectionTree } from "./CollectionTree";
 
 mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "loose" });
@@ -33,7 +34,9 @@ function svgSize(svg: string): { w: number; h: number } {
 }
 
 export function ApiCallChain() {
-  const { spec, chains, setChains, projectDir, logEvent } = useStore();
+  const { spec, chains, setChains, projectDir, logEvent } = useStore(
+    useShallow((s) => ({ spec: s.spec, chains: s.chains, setChains: s.setChains, projectDir: s.projectDir, logEvent: s.logEvent }))
+  );
   const [activeId, setActiveId] = useState<string>(chains[0]?.id ?? "");
   const [svg, setSvg] = useState("");
   const [msg, setMsg] = useState("");

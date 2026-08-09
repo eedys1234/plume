@@ -3,10 +3,41 @@ import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../ipc";
-import { pickSavePath } from "../dialog";
+import { pickSavePath, confirmWarn } from "../dialog";
 import { useStore } from "../store";
+import { useShallow } from "zustand/react/shallow";
 
 type View = "markdown" | "redoc" | "swagger";
+
+// origin 원격 URL로 GitHub 저장소 공개 여부를 판단.
+// 200=공개, 404=비공개/없음, 그 외/GitHub 아님/네트워크오류=불명.
+async function repoVisibility(dir: string): Promise<"public" | "private" | "unknown"> {
+  try {
+    const remotes = await api.gitRemotes(dir); // [name, url][]
+    const url = (remotes.find(([n]) => n === "origin") ?? remotes[0])?.[1];
+    if (!url) return "unknown";
+    const m = url.match(/github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?$/i);
+    if (!m) return "unknown"; // GitHub 원격이 아니면 판단 불가
+    const [, owner, repo] = m;
+    const res = await api.sendHttpRequest({
+      method: "GET",
+      url: `https://api.github.com/repos/${owner}/${repo}`,
+      headers: { "User-Agent": "Plume", Accept: "application/vnd.github+json" },
+      query: {},
+      body: { kind: "none" },
+      auth: { kind: "none" },
+    });
+    if (res.status === 200) {
+      const j = res.bodyJson as any;
+      if (j && typeof j.private === "boolean") return j.private ? "private" : "public";
+      return "public";
+    }
+    if (res.status === 404) return "private"; // 미인증 상태의 비공개 저장소는 404로 숨겨짐
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
 
 function CopyIcon() {
   return (
@@ -18,7 +49,7 @@ function CopyIcon() {
 }
 
 export function Docs() {
-  const { spec, projectDir } = useStore();
+  const { spec, projectDir } = useStore(useShallow((s) => ({ spec: s.spec, projectDir: s.projectDir })));
   const [view, setView] = useState<View>("markdown");
   const [md, setMd] = useState("");
   const [inclEx, setInclEx] = useState(true);
@@ -95,7 +126,22 @@ export function Docs() {
       setMsg("프로젝트를 먼저 열어야 합니다");
       return;
     }
+    // 공개 저장소가 아니면 경고 → 확인(OK) 시에만 진행.
     setBusy("pages");
+    setMsg("저장소 공개 여부 확인 중…");
+    const vis = await repoVisibility(projectDir);
+    if (vis !== "public") {
+      const warn =
+        vis === "private"
+          ? "이 저장소는 비공개(private)로 보입니다.\n비공개 저장소의 GitHub Pages는 유료 플랜(Pro/Team/Enterprise)에서만 동작합니다.\n\n그래도 배포(커밋·푸시)를 진행할까요?"
+          : "저장소의 공개 여부를 확인하지 못했습니다.\n(원격이 GitHub가 아니거나 네트워크 문제일 수 있습니다.)\n비공개라면 Pages가 노출되지 않을 수 있습니다.\n\n계속 진행할까요?";
+      const ok = await confirmWarn(warn, "GitHub Pages 배포 경고");
+      if (!ok) {
+        setBusy("");
+        setMsg("배포 취소됨");
+        return;
+      }
+    }
     setMsg(`${viewer} 배포 중… (docs 생성 → 커밋 → 푸시)`);
     try {
       const log = await api.publishGithubPages(projectDir, spec, `docs: update ${viewer} API docs`, viewer);

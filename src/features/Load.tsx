@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { api, type BodySpec, type HttpRequestSpec, type LoadResult } from "../ipc";
 import { listOperations, opFolder, specFolders, tabKey, useStore } from "../store";
+import { useShallow } from "zustand/react/shallow";
 
 const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"];
 
@@ -17,7 +18,9 @@ function opToRequest(path: string, method: string, op: any): HttpRequestSpec {
 }
 
 export function Load() {
-  const { activeEnv, spec, logEvent } = useStore();
+  const { activeEnv, spec, logEvent } = useStore(
+    useShallow((s) => ({ activeEnv: s.activeEnv, spec: s.spec, logEvent: s.logEvent }))
+  );
   const [mode, setMode] = useState<"single" | "folder" | "custom">("single");
   const [folder, setFolder] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());

@@ -180,6 +180,9 @@ export function basename(p: string): string {
   return p.split(/[\\/]/).filter(Boolean).pop() || p;
 }
 
+// 키 입력마다 검증 IPC가 폭주하지 않도록 revalidate를 디바운스한다.
+let _revalidateTimer: ReturnType<typeof setTimeout> | null = null;
+
 export const useStore = create<AppState>((set, get) => ({
   gnb: "builder",
   builderTab: "design",
@@ -265,7 +268,9 @@ export const useStore = create<AppState>((set, get) => ({
       spec: next,
       collections: s.collections.map((c) => (c.id === id ? { ...c, spec: next, name: next?.info?.title ?? c.name } : c)),
     }));
-    void get().revalidate();
+    // 타이핑 폭주 시 매번 Rust 검증 IPC를 보내지 않도록 400ms 디바운스.
+    if (_revalidateTimer) clearTimeout(_revalidateTimer);
+    _revalidateTimer = setTimeout(() => { _revalidateTimer = null; void get().revalidate(); }, 400);
   },
   revalidate: async () => {
     try {

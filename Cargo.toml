@@ -18,3 +18,17 @@ serde_yaml = "0.9"          # NOTE: 아카이브됨. 기능은 안정적. 추후
 openapiv3 = "2"
 thiserror = "1"
 indexmap = { version = "2", features = ["serde"] }
+
+# ── 빌드 프로파일 최적화 ───────────────────────────────────────────
+# 릴리스: thin-LTO + 단일 코드젠 유닛 + 심볼 제거 → 더 작고 빠른 바이너리.
+# (릴리스 빌드 시간이 다소 늘지만 시작 속도·용량에 이득. panic=abort는 커맨드
+#  패닉 시 앱 전체가 죽어 복원력이 떨어지므로 일부러 켜지 않음.)
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+# 개발: 의존성만 최적화(최초 1회 컴파일 후 캐시)해 `tauri dev` 런타임을 빠르게.
+# 우리 크레이트(apigen-core·src-tauri)는 opt-level 0 유지 → 재빌드는 여전히 빠름.
+[profile.dev.package."*"]
+opt-level = 3

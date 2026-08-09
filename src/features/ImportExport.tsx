@@ -3,9 +3,15 @@ import { useState } from "react";
 import { api } from "../ipc";
 import { pickSavePath, pickDirectory } from "../dialog";
 import { useStore } from "../store";
+import { useShallow } from "zustand/react/shallow";
 
 export function ImportExport() {
-  const { spec, setSpec, addCollection, activeCollectionId, collections, projectDir, logEvent, environments, setEnvironments } = useStore();
+  const { spec, setSpec, addCollection, activeCollectionId, collections, projectDir, logEvent, environments, setEnvironments } = useStore(
+    useShallow((s) => ({
+      spec: s.spec, setSpec: s.setSpec, addCollection: s.addCollection, activeCollectionId: s.activeCollectionId,
+      collections: s.collections, projectDir: s.projectDir, logEvent: s.logEvent, environments: s.environments, setEnvironments: s.setEnvironments,
+    }))
+  );
   const [text, setText] = useState("");
   const [fmt, setFmt] = useState<"json" | "yaml">("yaml");
   const [alsoBru, setAlsoBru] = useState(true);

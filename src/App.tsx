@@ -2,19 +2,20 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { api } from "./ipc";
 import { pickDirectory } from "./dialog";
 import { LAST_FOLDER_KEY, PROJECT_ROOT_KEY, basename, emptySpec, useStore, type BuilderTab, type Gnb } from "./store";
+import { useShallow } from "zustand/react/shallow";
 import { checkForUpdate, needsUpdate, applyUpdate, CURRENT_VERSION, type UpdateCheck, type UpdateInfo } from "./update";
 import { ErrorBoundary } from "./features/ErrorBoundary";
 import { Builder } from "./features/Builder";
-import { Docs } from "./features/Docs";
-import { Load } from "./features/Load";
-import { Environments } from "./features/Environments";
-import { ImportExport } from "./features/ImportExport";
-import { Git } from "./features/Git";
-import { History } from "./features/History";
 
-// 무거운 다이어그램 의존성(mermaid·cytoscape·katex ~1MB)을 지연 로드해 앱 시작을 빠르게.
-// API Call Chain 탭을 처음 열 때만 로드된다.
+// 시작 시엔 기본 화면(Builder)만 로드하고, 보조 탭·모달은 처음 열 때 지연 로드한다.
+// 특히 ApiCallChain은 무거운 다이어그램 의존성(mermaid·cytoscape·katex ~1MB)을 포함.
 const ApiCallChain = lazy(() => import("./features/ApiCallChain").then((m) => ({ default: m.ApiCallChain })));
+const Docs = lazy(() => import("./features/Docs").then((m) => ({ default: m.Docs })));
+const Load = lazy(() => import("./features/Load").then((m) => ({ default: m.Load })));
+const Environments = lazy(() => import("./features/Environments").then((m) => ({ default: m.Environments })));
+const ImportExport = lazy(() => import("./features/ImportExport").then((m) => ({ default: m.ImportExport })));
+const Git = lazy(() => import("./features/Git").then((m) => ({ default: m.Git })));
+const History = lazy(() => import("./features/History").then((m) => ({ default: m.History })));
 
 const LNB: { id: Gnb; label: string; icon: string }[] = [
   { id: "builder", label: "Builder", icon: "📦" },
@@ -48,7 +49,13 @@ export function App() {
   const {
     gnb, setGnb, builderTab, setBuilderTab,
     diagnostics, projectDir, setProjectDir, projectRoot, setProjectRoot, loadClient,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({
+      gnb: s.gnb, setGnb: s.setGnb, builderTab: s.builderTab, setBuilderTab: s.setBuilderTab,
+      diagnostics: s.diagnostics, projectDir: s.projectDir, setProjectDir: s.setProjectDir,
+      projectRoot: s.projectRoot, setProjectRoot: s.setProjectRoot, loadClient: s.loadClient,
+    }))
+  );
   const [status, setStatus] = useState("");
   const [showIO, setShowIO] = useState(false);
   const [showDiag, setShowDiag] = useState(false);
@@ -333,17 +340,15 @@ export function App() {
 
             <main className="content">
               <ErrorBoundary key={`${gnb}:${builderTab}`}>
-                {gnb === "builder" && builderTab === "design" && <Builder />}
-                {gnb === "builder" && builderTab === "call" && (
-                  <Suspense fallback={<div className="hint" style={{ padding: 20 }}>다이어그램 모듈 로딩 중…</div>}>
-                    <ApiCallChain />
-                  </Suspense>
-                )}
-                {gnb === "builder" && builderTab === "load" && <Load />}
-                {gnb === "builder" && builderTab === "docs" && <Docs />}
-                {gnb === "environment" && <Environments />}
-                {gnb === "git" && <Git />}
-                {gnb === "history" && <History />}
+                <Suspense fallback={<div className="hint" style={{ padding: 20 }}>로딩 중…</div>}>
+                  {gnb === "builder" && builderTab === "design" && <Builder />}
+                  {gnb === "builder" && builderTab === "call" && <ApiCallChain />}
+                  {gnb === "builder" && builderTab === "load" && <Load />}
+                  {gnb === "builder" && builderTab === "docs" && <Docs />}
+                  {gnb === "environment" && <Environments />}
+                  {gnb === "git" && <Git />}
+                  {gnb === "history" && <History />}
+                </Suspense>
               </ErrorBoundary>
             </main>
           </div>
@@ -359,7 +364,9 @@ export function App() {
               <h3>Import / Export</h3>
               <button onClick={() => setShowIO(false)}>닫기</button>
             </div>
-            <ImportExport />
+            <Suspense fallback={<div className="hint" style={{ padding: 20 }}>로딩 중…</div>}>
+              <ImportExport />
+            </Suspense>
           </div>
         </div>
       )}
@@ -460,7 +467,9 @@ function WorkspaceGate({ onOpenRoot, onBrowseRoot, onOpenWs, onNewWs }: {
   onOpenWs: (name: string) => void;
   onNewWs: () => void;
 }) {
-  const { projectRoot, workspaces, recentRoots, removeRecentRoot } = useStore();
+  const { projectRoot, workspaces, recentRoots, removeRecentRoot } = useStore(
+    useShallow((s) => ({ projectRoot: s.projectRoot, workspaces: s.workspaces, recentRoots: s.recentRoots, removeRecentRoot: s.removeRecentRoot }))
+  );
 
   if (!projectRoot) {
     return (
@@ -526,7 +535,9 @@ function WorkspaceSwitcher({ onOpenWs, onNewWs, onChangeRoot }: {
   onNewWs: () => void;
   onChangeRoot: () => void;
 }) {
-  const { workspaceName, workspaces, projectRoot } = useStore();
+  const { workspaceName, workspaces, projectRoot } = useStore(
+    useShallow((s) => ({ workspaceName: s.workspaceName, workspaces: s.workspaces, projectRoot: s.projectRoot }))
+  );
   const [open, setOpen] = useState(false);
   if (!projectRoot) return null;
   return (

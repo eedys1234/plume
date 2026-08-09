@@ -4,5 +4,5 @@
   "description": "기본 권한: 코어 IPC만 사용",
   "local": true,
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default", "updater:default", "process:allow-restart"]
+  "permissions": ["core:default", "dialog:default", "dialog:allow-confirm", "updater:default", "process:allow-restart"]
 }

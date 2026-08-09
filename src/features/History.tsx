@@ -1,9 +1,15 @@
 // History: 모든 활동 이벤트(Builder/Run/Export/Import/Chain/HTTP…) + 보낸 요청 목록.
 import { useState } from "react";
 import { useStore } from "../store";
+import { useShallow } from "zustand/react/shallow";
 
 export function History() {
-  const { history, clearHistory, events, clearEvents, setPrefillRequest, setGnb, setBuilderTab } = useStore();
+  const { history, clearHistory, events, clearEvents, setPrefillRequest, setGnb, setBuilderTab } = useStore(
+    useShallow((s) => ({
+      history: s.history, clearHistory: s.clearHistory, events: s.events, clearEvents: s.clearEvents,
+      setPrefillRequest: s.setPrefillRequest, setGnb: s.setGnb, setBuilderTab: s.setBuilderTab,
+    }))
+  );
   const [tab, setTab] = useState<"events" | "http">("events");
 
   function openInCall(req: any) {
