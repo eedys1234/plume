@@ -18,8 +18,6 @@ jobs:
             args: "--target aarch64-apple-darwin"
           - platform: macos-latest # Intel
             args: "--target x86_64-apple-darwin"
-          - platform: ubuntu-22.04
-            args: ""
           - platform: windows-latest
             args: ""
     runs-on: ${{ matrix.platform }}
@@ -46,14 +44,22 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
-      - name: Install Linux deps
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
       - name: Install frontend deps
         run: pnpm install
+
+      # 태그(vX.Y.Z)로 실행되면 그 버전을 설치파일명·업데이터 매니페스트에 반영.
+      # tauri.conf.json/package.json/워크스페이스 Cargo.toml 버전을 태그에서 파생한 값으로 덮어쓴다.
+      # (수동 실행 workflow_dispatch 시엔 건너뛰고 기존 config 버전을 그대로 사용)
+      - name: Sync version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "태그 버전 → $VERSION"
+          node -e "const f='src-tauri/tauri.conf.json',fs=require('fs');const j=JSON.parse(fs.readFileSync(f));j.version='$VERSION';fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');"
+          node -e "const f='package.json',fs=require('fs');const j=JSON.parse(fs.readFileSync(f));j.version='$VERSION';fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');"
+          # 워크스페이스 루트 Cargo.toml의 [workspace.package] version 도 맞춰 앱 내부 버전 일치.
+          node -e "const f='Cargo.toml',fs=require('fs');let s=fs.readFileSync(f,'utf8');s=s.replace(/^version\s*=\s*\"[^\"]*\"/m,'version = \"$VERSION\"');fs.writeFileSync(f,s);"
 
       - name: Build & release (Tauri)
         uses: tauri-apps/tauri-action@v0
@@ -67,7 +73,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Plume ${{ github.ref_name }}"
-          releaseBody: "설치파일을 내려받아 설치하세요. (Windows: .msi/.exe · macOS: .dmg · Linux: .deb/.AppImage)"
+          releaseBody: "설치파일을 내려받아 설치하세요. (Windows: .msi/.exe · macOS: .dmg)"
           releaseDraft: true
           prerelease: false
           # 업데이터 매니페스트(latest.json)를 릴리스 자산으로 함께 업로드.
@@ -80,7 +86,7 @@ jobs:
 #        - TAURI_SIGNING_PRIVATE_KEY_PASSWORD = (키 비밀번호, 없으면 빈 값)
 #      그리고 tauri.conf.json의 updater.endpoints의 OWNER/REPO를 실제 값으로 교체.
 #   2) git tag v0.1.0 && git push origin v0.1.0
-#      → 3개 OS 빌드 + 서명된 업데이터 아티팩트(.sig) + latest.json 을 Draft 릴리스에 첨부.
+#      → macOS·Windows 빌드 + 서명된 업데이터 아티팩트(.sig) + latest.json 을 Draft 릴리스에 첨부.
 #   3) 릴리스를 Publish 하면 https://github.com/OWNER/REPO/releases/latest/download/latest.json 이 활성화되어
 #      기존 사용자 앱이 자동으로 새 버전을 감지·설치·재시작.
 # 로컬 단일 빌드: pnpm tauri build  (→ src-tauri/target/release/bundle/)

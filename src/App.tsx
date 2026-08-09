@@ -89,8 +89,9 @@ export function App() {
       setUpdating(false);
     }
   }
-  // 시작 시 자동 확인.
-  useEffect(() => { runUpdateCheck(false); }, []);
+  // 시작 시 자동 확인 — 우선 비활성화(업데이트 모달 자동 팝업 끔).
+  // 다시 켜려면 아래 주석 해제. 툴바 버전칩 클릭 시의 수동 확인은 유지.
+  // useEffect(() => { runUpdateCheck(false); }, []);
 
   useEffect(() => {
     api.ping().then((p) => setStatus(`core: ${p}`)).catch(() => setStatus("core: 연결 실패"));
