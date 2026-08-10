@@ -342,11 +342,23 @@ pub struct CollectionOut {
 #[tauri::command]
 pub fn save_workspace_collections(ws_dir: String, collections: Vec<CollectionIn>) -> CmdResult<()> {
     let base = Path::new(&ws_dir).join("collections");
-    let _ = std::fs::remove_dir_all(&base); // stale 컬렉션 제거 후 재작성
+    std::fs::create_dir_all(&base).map_err(core::CoreError::from)?;
+    // 각 컬렉션은 split이 내부에서 변경분만 쓰고 stale 파일만 지운다(전량 재작성 X → 저장 빠름).
+    let mut keep: std::collections::BTreeSet<std::path::PathBuf> = std::collections::BTreeSet::new();
     for c in collections {
         let spec = to_spec(c.spec)?;
         let dir = base.join(safe_name(&c.name));
+        keep.insert(dir.clone());
         core::project::split(&dir, &spec)?;
+    }
+    // 삭제·이름변경으로 더 이상 없는 컬렉션 디렉터리만 제거.
+    if let Ok(rd) = std::fs::read_dir(&base) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() && !keep.contains(&p) {
+                let _ = std::fs::remove_dir_all(&p);
+            }
+        }
     }
     Ok(())
 }

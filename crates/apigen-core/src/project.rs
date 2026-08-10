@@ -36,7 +36,46 @@ fn write_yaml<T: Serialize>(path: &Path, val: &T) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
     let s = serde_yaml::to_string(val)?;
+    // 변경 없는 파일은 다시 쓰지 않는다: 디스크 쓰기·백신 재스캔·mtime 변경·git noise 방지.
+    // (split 출력은 결정적이므로 내용 동일 == 변화 없음.)
+    if let Ok(existing) = fs::read_to_string(path) {
+        if existing == s {
+            return Ok(());
+        }
+    }
     fs::write(path, s)?;
+    Ok(())
+}
+
+/// `dir` 아래를 재귀 순회하며 `keep`에 없는 파일을 삭제하고, 비게 된 하위 폴더도 제거한다.
+/// (`remove_dir_all` 후 전량 재작성 대신, 실제로 사라진 파일만 지우기 위한 sweep 단계.)
+fn sweep_stale(dir: &Path, keep: &std::collections::BTreeSet<PathBuf>) -> Result<()> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    let mut all_dirs: Vec<PathBuf> = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        all_dirs.push(d.clone());
+        for e in fs::read_dir(&d)?.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if !keep.contains(&p) {
+                let _ = fs::remove_file(&p);
+            }
+        }
+    }
+    // 깊은 폴더부터 비었으면 제거(루트 dir 자체는 유지).
+    all_dirs.sort_by_key(|p| std::cmp::Reverse(p.components().count()));
+    for d in all_dirs {
+        if d == *dir {
+            continue;
+        }
+        if fs::read_dir(&d).map(|mut r| r.next().is_none()).unwrap_or(false) {
+            let _ = fs::remove_dir(&d);
+        }
+    }
     Ok(())
 }
 
@@ -368,11 +407,10 @@ fn normalize_ref(s: &str) -> String {
 pub fn split(root: &Path, spec: &OpenAPI) -> Result<()> {
     fs::create_dir_all(root)?;
 
-    // 0) 삭제된 요청·폴더·컴포넌트가 디스크에 남아 되살아나지 않도록,
-    //    split이 관리하는 디렉터리(folders/·components/)를 먼저 비운다.
-    //    environments/·.apigen/·docs/·bruno/·.git 등 그 외 파일은 건드리지 않는다.
-    let _ = fs::remove_dir_all(root.join("folders"));
-    let _ = fs::remove_dir_all(root.join("components"));
+    // split이 이번에 쓴 파일 경로를 모아, 마지막에 folders/·components/의 stale 파일만 제거한다.
+    // (예전엔 remove_dir_all로 통째로 지우고 전량 재작성했지만, 그러면 변경 없는 수백~수천 개
+    //  파일까지 매 저장마다 다시 쓰게 되어 느렸다. environments/·.apigen/·docs/·bruno/·.git 은 미접촉.)
+    let mut written: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
 
     // 1) project.yaml
     let proj = ProjectFile {
@@ -394,18 +432,22 @@ pub fn split(root: &Path, spec: &OpenAPI) -> Result<()> {
         x_post_response_script: spec.extensions.get("x-post-response-script").cloned().unwrap_or(serde_json::Value::Null),
         x_folder_scripts: spec.extensions.get("x-folder-scripts").cloned().unwrap_or(serde_json::Value::Null),
     };
-    write_yaml(&root.join("project.yaml"), &proj)?;
+    let proj_path = root.join("project.yaml");
+    write_yaml(&proj_path, &proj)?;
+    written.insert(proj_path);
 
     // 2) components/**
     if let Some(comp) = &spec.components {
-        write_component_dir(&root.join("components/schemas"), &comp.schemas)?;
-        write_component_dir(&root.join("components/responses"), &comp.responses)?;
-        write_component_dir(&root.join("components/parameters"), &comp.parameters)?;
-        write_component_dir(&root.join("components/examples"), &comp.examples)?;
-        write_component_dir(&root.join("components/requestBodies"), &comp.request_bodies)?;
-        write_component_dir(&root.join("components/headers"), &comp.headers)?;
+        write_component_dir(&root.join("components/schemas"), &comp.schemas, &mut written)?;
+        write_component_dir(&root.join("components/responses"), &comp.responses, &mut written)?;
+        write_component_dir(&root.join("components/parameters"), &comp.parameters, &mut written)?;
+        write_component_dir(&root.join("components/examples"), &comp.examples, &mut written)?;
+        write_component_dir(&root.join("components/requestBodies"), &comp.request_bodies, &mut written)?;
+        write_component_dir(&root.join("components/headers"), &comp.headers, &mut written)?;
         if !comp.security_schemes.is_empty() {
-            write_yaml(&root.join("components/securitySchemes.yaml"), &comp.security_schemes)?;
+            let sec_path = root.join("components/securitySchemes.yaml");
+            write_yaml(&sec_path, &comp.security_schemes)?;
+            written.insert(sec_path);
         }
     }
 
@@ -417,18 +459,22 @@ pub fn split(root: &Path, spec: &OpenAPI) -> Result<()> {
         let ReferenceOr::Item(pi) = &spec.paths.paths[path] else { continue };
         for (method, op) in operations(pi) {
             let Some(op) = op else { continue };
-            write_request(root, path, method, op)?;
+            write_request(root, path, method, op, &mut written)?;
         }
     }
 
     // 4) 폴더 마커: 빈 폴더(요청 없음)도 디스크에 남기고 git이 추적하도록 _folder.yaml 기록.
-    write_folder_markers(root, spec)?;
+    write_folder_markers(root, spec, &mut written)?;
+
+    // 5) sweep: 이번에 안 쓴(=삭제된) 파일만 folders/·components/에서 제거.
+    sweep_stale(&root.join("folders"), &written)?;
+    sweep_stale(&root.join("components"), &written)?;
     Ok(())
 }
 
 /// operation의 x-folder ∪ 루트 x-folders를 모아, 각 폴더(및 모든 상위 경로)에
 /// `_folder.yaml`을 쓴다. → 빈 폴더 영속화 + git 추적.
-fn write_folder_markers(root: &Path, spec: &OpenAPI) -> Result<()> {
+fn write_folder_markers(root: &Path, spec: &OpenAPI, written: &mut std::collections::BTreeSet<PathBuf>) -> Result<()> {
     use std::collections::BTreeSet;
     let mut folders: BTreeSet<String> = BTreeSet::new();
 
@@ -467,7 +513,9 @@ fn write_folder_markers(root: &Path, spec: &OpenAPI) -> Result<()> {
             dir = dir.join(sanitize(seg));
         }
         let name = folder.rsplit('/').next().unwrap_or(folder).to_string();
-        write_yaml(&dir.join("_folder.yaml"), &FolderFile { name: Some(name), ..Default::default() })?;
+        let marker = dir.join("_folder.yaml");
+        write_yaml(&marker, &FolderFile { name: Some(name), ..Default::default() })?;
+        written.insert(marker);
     }
     Ok(())
 }
@@ -475,9 +523,12 @@ fn write_folder_markers(root: &Path, spec: &OpenAPI) -> Result<()> {
 fn write_component_dir<T: Serialize>(
     dir: &Path,
     map: &indexmap::IndexMap<String, ReferenceOr<T>>,
+    written: &mut std::collections::BTreeSet<PathBuf>,
 ) -> Result<()> {
     for (name, val) in map {
-        write_yaml(&dir.join(format!("{name}.yaml")), val)?;
+        let p = dir.join(format!("{name}.yaml"));
+        write_yaml(&p, val)?;
+        written.insert(p);
     }
     Ok(())
 }
@@ -496,7 +547,7 @@ fn operations(pi: &PathItem) -> Vec<(&'static str, Option<&Operation>)> {
     ]
 }
 
-fn write_request(root: &Path, path: &str, method: &str, op: &Operation) -> Result<()> {
+fn write_request(root: &Path, path: &str, method: &str, op: &Operation, written: &mut std::collections::BTreeSet<PathBuf>) -> Result<()> {
     // 폴더 결정 우선순위: x-folder 확장 > 첫 태그 > 첫 path 세그먼트.
     let folder = op
         .extensions
@@ -524,10 +575,14 @@ fn write_request(root: &Path, path: &str, method: &str, op: &Operation) -> Resul
     let example_files = extract_examples(&mut op);
 
     let req_file = RequestFile { method: method.to_string(), path: path.to_string(), operation: op };
-    write_yaml(&req_dir.join("request.yaml"), &req_file)?;
+    let req_path = req_dir.join("request.yaml");
+    write_yaml(&req_path, &req_file)?;
+    written.insert(req_path);
 
     for ex in example_files {
-        write_yaml(&req_dir.join("examples").join(format!("{}.yaml", sanitize(&ex.name))), &ex)?;
+        let ex_path = req_dir.join("examples").join(format!("{}.yaml", sanitize(&ex.name)));
+        write_yaml(&ex_path, &ex)?;
+        written.insert(ex_path);
     }
     Ok(())
 }

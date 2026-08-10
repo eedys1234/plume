@@ -305,6 +305,47 @@ paths:
     }
 
     #[test]
+    fn resplit_rewrites_only_changed_files() {
+        // 저장 성능의 핵심: 내용이 그대로면 파일을 다시 쓰지 않고(mtime 유지),
+        // 바뀐 요청만 다시 쓴다(mtime 갱신). → 매 Ctrl+S마다 전량 재작성하지 않음.
+        let dir = tempfile::tempdir().unwrap();
+        let v1 = r#"
+openapi: 3.0.3
+info: { title: T, version: "1" }
+x-folders: ["users"]
+paths:
+  /a:
+    get: { summary: A, x-folder: users, responses: { "200": { description: ok } } }
+  /b:
+    get: { summary: B, x-folder: users, responses: { "200": { description: ok } } }
+"#;
+        split(dir.path(), &import_spec(v1, Some(Format::Yaml)).unwrap()).unwrap();
+        let fa = dir.path().join("folders/users/get_a/request.yaml");
+        let fb = dir.path().join("folders/users/get_b/request.yaml");
+        let m = |p: &std::path::Path| fs::metadata(p).unwrap().modified().unwrap();
+        let (ma0, mb0) = (m(&fa), m(&fb));
+
+        // mtime 해상도(FS에 따라 초 단위일 수 있음)를 넘기려 충분히 대기.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+
+        // /a만 summary 변경 후 재저장.
+        let v2 = r#"
+openapi: 3.0.3
+info: { title: T, version: "1" }
+x-folders: ["users"]
+paths:
+  /a:
+    get: { summary: A-CHANGED, x-folder: users, responses: { "200": { description: ok } } }
+  /b:
+    get: { summary: B, x-folder: users, responses: { "200": { description: ok } } }
+"#;
+        split(dir.path(), &import_spec(v2, Some(Format::Yaml)).unwrap()).unwrap();
+
+        assert_ne!(m(&fa), ma0, "변경된 /a 는 다시 써져 mtime이 갱신되어야");
+        assert_eq!(m(&fb), mb0, "변경 없는 /b 는 다시 쓰지 않아 mtime이 유지되어야");
+    }
+
+    #[test]
     fn workspace_multi_collection_roundtrip() {
         // save_workspace_collections / load_workspace_collections 의 코어 로직(collections/<이름>/) 재현.
         let ws = tempfile::tempdir().unwrap();
