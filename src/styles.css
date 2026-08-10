@@ -419,6 +419,7 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 
 /* 아이콘 버튼(가져오기/새 환경 등) */
 .iconbtn { width: 28px; height: 28px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1; border-radius: 6px; }
+.iconbtn:disabled { opacity: 0.35; cursor: default; }
 
 /* 드래그앤드랍 대상 폴더/컬렉션 하이라이트 */
 .treerow.dropover { outline: 2px dashed var(--accent, #6b7bff); outline-offset: -2px; background: var(--accent-soft); }

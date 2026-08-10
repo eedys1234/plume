@@ -1,5 +1,6 @@
 // 앱 전역 상태(SSOT). 스펙 문서 그 자체를 단일 진실 원천으로 보유한다(§2 원칙 2).
 import { create } from "zustand";
+import { temporal } from "zundo";
 import { produce, setAutoFreeze } from "immer";
 import { api, type Diagnostic, type Environment, type HttpRequestSpec, type Spec } from "./ipc";
 
@@ -206,7 +207,18 @@ function scheduleEnvPersist(get: () => AppState) {
   }, 500);
 }
 
-export const useStore = create<AppState>((set, get) => ({
+// 되돌리기(undo/redo)로 묶을 타이핑 간격.
+function _debounce<T extends (...a: any[]) => void>(fn: T, ms: number): T {
+  let t: ReturnType<typeof setTimeout> | null = null;
+  return ((...args: any[]) => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  }) as T;
+}
+
+export const useStore = create<AppState>()(
+  temporal(
+    (set, get) => ({
   gnb: "builder",
   builderTab: "design",
 
@@ -545,7 +557,34 @@ export const useStore = create<AppState>((set, get) => ({
       }
     });
   },
-}));
+    }),
+    {
+      limit: 100,
+      // 되돌리기 대상: 스펙(활성 미러) + 모든 컬렉션 + 활성 컬렉션 + 환경. (편집·DnD·컬렉션조작·환경변수 전부 커버)
+      partialize: (s): TrackedState => ({
+        spec: s.spec,
+        collections: s.collections,
+        activeCollectionId: s.activeCollectionId,
+        environments: s.environments,
+      }),
+      // 참조 비교 — diagnostics 등 비추적 변경으로 히스토리가 오염되지 않도록.
+      equality: (a, b) =>
+        a.spec === b.spec &&
+        a.collections === b.collections &&
+        a.activeCollectionId === b.activeCollectionId &&
+        a.environments === b.environments,
+      // 타이핑을 한 단계로 묶기(500ms).
+      handleSet: (handleSet) => _debounce((state) => handleSet(state), 500),
+    }
+  )
+);
+
+type TrackedState = {
+  spec: Spec;
+  collections: Collection[];
+  activeCollectionId: string;
+  environments: Environment[];
+};
 
 /** operation의 폴더 경로(x-folder). 없으면 빈 문자열(루트). */
 export function opFolder(op: any): string {

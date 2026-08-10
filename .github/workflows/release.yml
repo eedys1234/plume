@@ -73,7 +73,13 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Plume ${{ github.ref_name }}"
-          releaseBody: "설치파일을 내려받아 설치하세요. (Windows: .msi/.exe · macOS: .dmg)"
+          releaseBody: |
+            설치파일을 내려받아 설치하세요. (Windows: .msi/.exe · macOS: .dmg)
+
+            ⚠️ **macOS**: 서명·공증 전이라 "Plume.app is damaged" 경고가 뜰 수 있습니다. 터미널에서 아래를 실행하면 열립니다:
+            ```
+            sudo xattr -dr com.apple.quarantine /Applications/Plume.app
+            ```
           releaseDraft: true
           prerelease: false
           # 업데이터 매니페스트(latest.json)를 릴리스 자산으로 함께 업로드.

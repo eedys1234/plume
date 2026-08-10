@@ -3,6 +3,7 @@ import { api } from "./ipc";
 import { pickDirectory } from "./dialog";
 import { LAST_FOLDER_KEY, PROJECT_ROOT_KEY, basename, emptySpec, useStore, type BuilderTab, type Gnb } from "./store";
 import { useShallow } from "zustand/react/shallow";
+import { useStore as useZustandStore } from "zustand";
 import { checkForUpdate, needsUpdate, applyUpdate, CURRENT_VERSION, type UpdateCheck, type UpdateInfo } from "./update";
 import { ErrorBoundary } from "./features/ErrorBoundary";
 import { Builder } from "./features/Builder";
@@ -62,6 +63,9 @@ export function App() {
   const [showExport, setShowExport] = useState(false);
   const [showDiag, setShowDiag] = useState(false);
   const [showNewWs, setShowNewWs] = useState(false);
+  // 되돌리기/다시하기 가능 여부(zundo temporal 구독).
+  const canUndo = useZustandStore((useStore as any).temporal, (s: any) => s.pastStates.length > 0);
+  const canRedo = useZustandStore((useStore as any).temporal, (s: any) => s.futureStates.length > 0);
   const [confirmDlg, setConfirmDlg] = useState<{ title: string; message: string; okLabel: string; danger?: boolean; onOk: () => void } | null>(null);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [showUpdate, setShowUpdate] = useState(false);
@@ -129,6 +133,18 @@ export function App() {
           .then(() => api.writeTextFile(`${dir}/.plume/workspace.json`, JSON.stringify({ name: st.workspaceName || basename(dir) }, null, 2)))
           .then(() => { st.showToast(`저장됨 ✓ (컬렉션 ${cols.length})`); st.logEvent("Save", `워크스페이스 저장 · ${st.workspaceName} · 컬렉션 ${cols.length}`); })
           .catch((err) => st.showToast(`저장 실패: ${err?.message ?? err}`, "err"));
+      }
+      // Ctrl+Z 되돌리기 / Ctrl+Shift+Z·Ctrl+Y 다시하기 (스펙·DnD·컬렉션·환경 전부).
+      const z = e.key.toLowerCase() === "z";
+      const y = e.key.toLowerCase() === "y";
+      if ((e.ctrlKey || e.metaKey) && z && !e.shiftKey) {
+        e.preventDefault();
+        (useStore as any).temporal.getState().undo();
+        void useStore.getState().revalidate();
+      } else if ((e.ctrlKey || e.metaKey) && ((z && e.shiftKey) || y)) {
+        e.preventDefault();
+        (useStore as any).temporal.getState().redo();
+        void useStore.getState().revalidate();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -210,6 +226,8 @@ export function App() {
         setStatus(`워크스페이스 '${name}' 설정 · Ctrl+S로 저장`);
       }
     }
+    // 워크스페이스 로드는 되돌리기 대상이 아님 — 히스토리 초기화.
+    (useStore as any).temporal.getState().clear();
   }
   // 새 워크스페이스(서브폴더) 생성 → 기본 컬렉션 1개.
   async function createWorkspace(rawName: string) {
@@ -311,6 +329,14 @@ export function App() {
         {projectRoot && <button className="wsadd" title="새 워크스페이스" onClick={() => setShowNewWs(true)}>＋</button>}
         {projectDir && <button onClick={() => setShowImport(true)}>⬇ Import</button>}
         {projectDir && <button onClick={() => setShowExport(true)}>⬆ Export</button>}
+        {projectDir && (
+          <>
+            <button className="iconbtn" title="되돌리기 (Ctrl+Z)" disabled={!canUndo}
+              onClick={() => { (useStore as any).temporal.getState().undo(); void useStore.getState().revalidate(); }}>↶</button>
+            <button className="iconbtn" title="다시하기 (Ctrl+Shift+Z)" disabled={!canRedo}
+              onClick={() => { (useStore as any).temporal.getState().redo(); void useStore.getState().revalidate(); }}>↷</button>
+          </>
+        )}
         <span className="spacer" />
         {/* 업데이트: 사용 가능하면 강조 버튼, 아니면 버전칩(클릭=재확인) */}
         {update && needsUpdate(update.info) ? (
