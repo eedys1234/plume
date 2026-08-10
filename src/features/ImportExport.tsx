@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { api, type Spec } from "../ipc";
 import { pickSavePath, pickDirectory, pickOpenFile } from "../dialog";
-import { useStore } from "../store";
+import { useStore, mergeCollections } from "../store";
 import { useShallow } from "zustand/react/shallow";
 
 const HTTP_METHODS = ["get", "post", "put", "delete", "patch", "head", "options"];
@@ -200,13 +200,17 @@ export function ExportPanel() {
       collections: s.collections, activeCollectionId: s.activeCollectionId, projectDir: s.projectDir, logEvent: s.logEvent,
     }))
   );
-  const [colId, setColId] = useState(activeCollectionId);
+  const [colId, setColId] = useState<string>(activeCollectionId);
   const [preview, setPreview] = useState("");
   const [msg, setMsg] = useState("");
 
+  // colId === "all" 이면 모든 컬렉션을 하나로 병합해 Export.
+  const isAll = colId === "all";
   const col = collections.find((c) => c.id === colId) ?? collections.find((c) => c.id === activeCollectionId);
-  const spec = col?.spec;
-  const title = (spec?.info?.title || "openapi").replace(/[^\w.-]+/g, "-");
+  const spec = isAll ? mergeCollections(collections, "전체 API") : col?.spec;
+  const title = isAll
+    ? "all-collections"
+    : (spec?.info?.title || "openapi").replace(/[^\w.-]+/g, "-");
 
   async function downloadOpenapi(kind: "yaml" | "json") {
     if (!spec) return;
@@ -270,12 +274,17 @@ export function ExportPanel() {
           <div className="iocardhead">
             <h4>⬆ Export</h4>
             <select value={colId} onChange={(e) => setColId(e.target.value)} title="내보낼 컬렉션">
+              <option value="all">전체 (모든 컬렉션)</option>
               {collections.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
-          <p className="hint tiny">대상 컬렉션을 선택하고 형식을 고르세요.</p>
+          <p className="hint tiny">
+            {isAll
+              ? `전체 ${collections.length}개 컬렉션을 하나로 병합해 내보냅니다.`
+              : "대상 컬렉션을 선택하고 형식을 고르세요."}
+          </p>
           <div className="exportbtns">
             <button onClick={() => downloadOpenapi("yaml")}><b>OpenAPI YAML</b><span>다운로드</span></button>
             <button onClick={() => downloadOpenapi("json")}><b>OpenAPI JSON</b><span>다운로드</span></button>
@@ -288,7 +297,7 @@ export function ExportPanel() {
         <div className="iocard">
           <div className="iocardhead">
             <h4>미리보기</h4>
-            <span className="hint tiny">{col?.name ?? ""}</span>
+            <span className="hint tiny">{isAll ? `전체 (${collections.length}개 컬렉션)` : col?.name ?? ""}</span>
           </div>
           <textarea className="rawedit" spellCheck={false} readOnly value={preview} placeholder="다운로드하면 내용이 여기에 표시됩니다." />
         </div>
