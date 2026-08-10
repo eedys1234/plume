@@ -49,6 +49,20 @@ export interface ClientConfig {
   activeEnvironmentId: string;
 }
 
+export interface DeployInput {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+  region: string;
+  bucket: string;
+  key: string;
+  distributionId?: string;
+  invalidationPath?: string;
+  viewer?: "redoc" | "swagger";
+  title?: string;
+  spec: Spec;
+}
+
 export interface GitFileStatus {
   status: string;
   path: string;
@@ -165,6 +179,9 @@ export const api = {
     invoke<string>("export_standalone_html", { dest, spec, viewer }),
   publishGithubPages: (dir: string, spec: Spec, message: string, viewer: "redoc" | "swagger" = "redoc") =>
     invoke<string>("publish_github_pages", { dir, spec, message, viewer }),
+  deployCloudFront: (input: DeployInput) => invoke<string>("deploy_cloudfront", { input }),
+  deployConfigLoad: (project: string) => invoke<string | null>("deploy_config_load", { project }),
+  deployConfigSave: (project: string, json: string) => invoke<void>("deploy_config_save", { project, json }),
 
   // Git
   gitStatus: (dir: string) => invoke<GitStatus>("git_status", { dir }),

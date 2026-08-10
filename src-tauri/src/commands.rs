@@ -289,6 +289,68 @@ pub fn publish_github_pages(dir: String, spec: Value, message: String, viewer: O
     Ok(core::publish::publish_pages(Path::new(&dir), &json, &title, &message, v)?)
 }
 
+/// CloudFront(S3 오리진) 배포 입력. 자격증명은 그때그때 넘기며 디스크에 저장하지 않는다.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployIn {
+    pub access_key_id: String,
+    pub secret_access_key: String,
+    #[serde(default)]
+    pub session_token: Option<String>,
+    pub region: String,
+    pub bucket: String,
+    pub key: String,
+    #[serde(default)]
+    pub distribution_id: String,
+    #[serde(default)]
+    pub invalidation_path: String,
+    #[serde(default)]
+    pub viewer: Option<String>,
+    /// 문서 제목(비면 spec.info.title 사용).
+    #[serde(default)]
+    pub title: Option<String>,
+    pub spec: Value,
+}
+
+/// 문서 HTML을 생성해 S3에 업로드하고 CloudFront를 무효화한다(GitHub Actions의 s3 cp + invalidation).
+#[tauri::command]
+pub fn deploy_cloudfront(input: DeployIn) -> CmdResult<String> {
+    let spec = to_spec(input.spec)?;
+    let title = input.title.filter(|t| !t.trim().is_empty()).unwrap_or_else(|| spec.info.title.clone());
+    let json = core::export_spec(&spec, Format::Json)?;
+    let v = core::publish::Viewer::parse(input.viewer.as_deref().unwrap_or("redoc"));
+    let html = match v {
+        core::publish::Viewer::Swagger => core::publish::render_swagger_html(&json, &title, true),
+        core::publish::Viewer::Redoc => core::publish::render_redoc_html(&json, &title, true),
+    };
+    let creds = core::deploy::AwsCreds {
+        access_key_id: input.access_key_id,
+        secret_access_key: input.secret_access_key,
+        session_token: input.session_token.filter(|t| !t.trim().is_empty()),
+    };
+    let key = if input.key.trim().is_empty() { "index.html".to_string() } else { input.key };
+    let cfg = core::deploy::DeployConfig {
+        region: input.region,
+        bucket: input.bucket,
+        key,
+        distribution_id: input.distribution_id,
+        invalidation_path: input.invalidation_path,
+    };
+    Ok(core::deploy::deploy_cloudfront(&creds, &cfg, &html)?)
+}
+
+/// 배포 설정(자격증명 포함)을 암호화해 앱 설정 디렉터리에 저장한다(워크스페이스/깃 밖).
+#[tauri::command]
+pub fn deploy_config_save(app: tauri::AppHandle, project: String, json: String) -> CmdResult<()> {
+    crate::secretstore::save(&app, &project, &json).map_err(|m| core::CoreError::Project(m).into())
+}
+
+/// 암호화 저장된 배포 설정을 복호화해 JSON 문자열로 반환(없으면 null).
+#[tauri::command]
+pub fn deploy_config_load(app: tauri::AppHandle, project: String) -> CmdResult<Option<String>> {
+    crate::secretstore::load(&app, &project).map_err(|m| core::CoreError::Project(m).into())
+}
+
 // ─────────────────────────── 파일 IO (다운로드·체인 영속) ───────────────────────────
 
 /// 임의 텍스트 파일 쓰기(내보내기 다운로드·체인 저장 등). 상위 폴더 자동 생성.

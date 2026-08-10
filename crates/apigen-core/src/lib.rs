@@ -11,6 +11,7 @@
 //! - Import/Export: [`import_spec`] / [`export_spec`]
 
 pub mod bru;
+pub mod deploy;
 pub mod error;
 pub mod git;
 pub mod http;

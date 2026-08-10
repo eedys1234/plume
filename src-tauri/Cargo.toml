@@ -23,5 +23,10 @@ serde_json.workspace = true
 # 도메인 로직은 전부 코어에서 가져온다. 이 크레이트는 얇은 IPC 어댑터일 뿐.
 apigen-core = { path = "../crates/apigen-core" }
 
+# 배포 설정(AWS 자격증명) 로컬 암호화 저장: AES-256-GCM + OS 키체인에 키 보관.
+aes-gcm = "0.10"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+getrandom = "0.2"
+
 [dev-dependencies]
 tempfile = "3"

@@ -18,12 +18,27 @@ const ImportPanel = lazy(() => import("./features/ImportExport").then((m) => ({ 
 const ExportPanel = lazy(() => import("./features/ImportExport").then((m) => ({ default: m.ExportPanel })));
 const Git = lazy(() => import("./features/Git").then((m) => ({ default: m.Git })));
 const History = lazy(() => import("./features/History").then((m) => ({ default: m.History })));
+const Settings = lazy(() => import("./features/Settings").then((m) => ({ default: m.Settings })));
+
+// 워크스페이스 로드/생성은 되돌리기 대상이 아니다. 하지만 히스토리 저장이 500ms 디바운스라
+// 즉시 clear()만으론 직후 예약분이 다시 쌓인다 → pause 후 디바운스 창을 넘겨 clear+resume.
+function resetUndoHistory() {
+  const t = (useStore as any).temporal.getState();
+  t.pause();
+  t.clear();
+  setTimeout(() => {
+    const tt = (useStore as any).temporal.getState();
+    tt.clear();
+    tt.resume();
+  }, 600);
+}
 
 const LNB: { id: Gnb; label: string; icon: string }[] = [
   { id: "builder", label: "Builder", icon: "📦" },
   { id: "environment", label: "Env", icon: "🌐" },
   { id: "git", label: "Git", icon: "⎇" },
   { id: "history", label: "History", icon: "🕘" },
+  { id: "settings", label: "Settings", icon: "⚙" },
 ];
 
 // 프로젝트 폴더별 마지막으로 연 워크스페이스 이름(폴더 재선택 시 자동 복원).
@@ -226,8 +241,8 @@ export function App() {
         setStatus(`워크스페이스 '${name}' 설정 · Ctrl+S로 저장`);
       }
     }
-    // 워크스페이스 로드는 되돌리기 대상이 아님 — 히스토리 초기화.
-    (useStore as any).temporal.getState().clear();
+    // 워크스페이스 로드는 되돌리기 대상이 아님 — 히스토리 초기화(디바운스 예약분까지).
+    resetUndoHistory();
   }
   // 새 워크스페이스(서브폴더) 생성 → 기본 컬렉션 1개.
   async function createWorkspace(rawName: string) {
@@ -242,6 +257,7 @@ export function App() {
     setLastWsFor(root, name);
     st.setChains([]);
     st.loadCollections([{ name: "New API", spec: emptySpec("New API") }]);
+    resetUndoHistory(); // 새 워크스페이스 생성은 되돌리기 대상 아님(이전 워크스페이스로 복귀 방지)
     try {
       await api.writeTextFile(`${dir}/.plume/workspace.json`, JSON.stringify({ name }, null, 2));
       await api.saveWorkspaceCollections(dir, [{ name: "New API", spec: useStore.getState().spec }]);
@@ -427,6 +443,7 @@ export function App() {
                   {gnb === "environment" && <Environments />}
                   {gnb === "git" && <Git />}
                   {gnb === "history" && <History />}
+                  {gnb === "settings" && <Settings />}
                 </Suspense>
               </ErrorBoundary>
             </main>

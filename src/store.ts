@@ -9,7 +9,7 @@ import { api, type Diagnostic, type Environment, type HttpRequestSpec, type Spec
 setAutoFreeze(false);
 
 // LNB(좌측 전역 네비) + Builder 하위 탭.
-export type Gnb = "builder" | "environment" | "import" | "git" | "history";
+export type Gnb = "builder" | "environment" | "import" | "git" | "history" | "settings";
 export type BuilderTab = "design" | "call" | "load" | "docs";
 
 /** 호출 히스토리 항목. */
@@ -609,6 +609,24 @@ export function foldersFromOps(ops: { op: any }[], spec: Spec): string[] {
   for (const f of (spec?.["x-folders"] ?? [])) if (f) set.add(f);
   for (const { op } of ops) { const f = opFolder(op); if (f) set.add(f); }
   return [...set].sort();
+}
+
+/** 여러 컬렉션을 하나의 OpenAPI 스펙으로 병합(전체 Export/문서용). paths·x-folders·components 병합. */
+export function mergeCollections(cols: { name: string; spec: any }[], title = "전체 API"): any {
+  const paths: any = {};
+  const folders = new Set<string>();
+  const components: any = {};
+  for (const c of cols) {
+    const cs = c.spec ?? {};
+    for (const p of Object.keys(cs.paths ?? {})) paths[p] = { ...(paths[p] ?? {}), ...cs.paths[p] };
+    for (const f of cs["x-folders"] ?? []) folders.add(f);
+    for (const [k, v] of Object.entries(cs.components ?? {})) {
+      components[k] = { ...(components[k] ?? {}), ...(v as any) };
+    }
+  }
+  const out: any = { openapi: "3.0.3", info: { title, version: "1.0.0" }, paths, "x-folders": [...folders] };
+  if (Object.keys(components).length) out.components = components;
+  return out;
 }
 
 // ─────────────────────────── 트리 ───────────────────────────

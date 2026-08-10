@@ -1,6 +1,7 @@
 //! Tauri 앱 진입 로직. main.rs는 이 `run()`만 호출한다(데스크톱/모바일 공용 구조).
 
 mod commands;
+mod secretstore;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -82,6 +83,9 @@ pub fn run() {
             commands::write_pages_docs,
             commands::export_standalone_html,
             commands::publish_github_pages,
+            commands::deploy_cloudfront,
+            commands::deploy_config_load,
+            commands::deploy_config_save,
             commands::git_status,
             commands::git_log,
             commands::git_init,

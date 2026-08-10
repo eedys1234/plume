@@ -16,6 +16,10 @@ indexmap.workspace = true
 # HTTP 클라이언트. rustls로 시스템 OpenSSL 의존 제거, blocking API로 코어를 동기 함수로 유지.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 
+# AWS SigV4 서명(S3/CloudFront 배포)용. 순수 Rust·경량 → async SDK 없이 blocking reqwest로 서명 요청.
+sha2 = "0.10"
+hmac = "0.12"
+
 [dev-dependencies]
 # 테스트에서만 쓰는 임시 디렉토리 생성기
 tempfile = "3"

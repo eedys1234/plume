@@ -497,6 +497,27 @@ button.active.danger:hover { background: #b0311f; }
 .varpophead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .varedit { margin: 0; }
 
+/* Settings 화면 */
+.settings { flex: 1; overflow: auto; }
+.settingsinner { max-width: 780px; margin: 0 auto; padding: 22px 24px 40px; }
+.settingsinner > h2 { margin: 0 0 18px; }
+.settingsec { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 16px 18px; margin-bottom: 18px; }
+.settingsec > h3 { margin: 0 0 4px; font-size: 14px; }
+.settingsec > .hint { margin: 0 0 12px; line-height: 1.5; }
+.settinggrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.settinggrid label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-dim); }
+.settinggrid label input, .settinggrid label select { padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 13px; }
+.settinggrid label input:focus, .settinggrid label select:focus { border-color: var(--accent); }
+.settingwide { grid-column: 1 / -1; }
+.secretwrap { display: flex; gap: 6px; }
+.secretwrap input { flex: 1; min-width: 0; }
+.secrettoggle { flex: none; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 12px; }
+.secrettoggle:hover { color: var(--text); }
+.settingbar { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.settingbar .spacer { flex: 1; }
+.settingbar button.danger { border-color: var(--danger, #c0392b); color: var(--danger, #c0392b); background: transparent; }
+.settingbar button.danger:hover { background: var(--danger, #c0392b); color: #fff; }
+
 /* varpop: 환경변수 선택 리스트 */
 .varpick { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
 .varpicklabel { font-size: 11px; color: var(--text-dim); margin: 0 2px 6px; }

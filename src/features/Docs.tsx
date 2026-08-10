@@ -6,6 +6,7 @@ import { api } from "../ipc";
 import { pickSavePath, confirmWarn } from "../dialog";
 import { useStore } from "../store";
 import { useShallow } from "zustand/react/shallow";
+import { loadDeploy } from "./deployConfig";
 
 type View = "markdown" | "redoc" | "swagger";
 
@@ -167,7 +168,7 @@ export function Docs() {
 </body></html>`;
   }, [docSpec]);
 
-  const [busy, setBusy] = useState<"" | "html" | "pages">("");
+  const [busy, setBusy] = useState<"" | "html" | "pages" | "cf">("");
 
   // 현재 문서 뷰(redoc/swagger)에 맞춰 배포한다.
   const viewer: "redoc" | "swagger" = view === "swagger" ? "swagger" : "redoc";
@@ -222,6 +223,37 @@ export function Docs() {
     }
   }
 
+  // CloudFront(S3) 배포: Settings 탭에 저장한 자격증명·설정으로 현재 문서를 업로드 + 무효화.
+  async function deployCf() {
+    const d = await loadDeploy(projectDir);
+    if (!d.accessKeyId.trim() || !d.secretAccessKey.trim() || !d.bucket.trim()) {
+      setMsg("Settings 탭에서 AWS 자격증명·버킷을 먼저 입력하세요");
+      useStore.getState().setGnb("settings");
+      return;
+    }
+    setBusy("cf");
+    setMsg(`CloudFront 배포 중… (${viewer} → s3://${d.bucket}/${d.key})`);
+    try {
+      const log = await api.deployCloudFront({
+        accessKeyId: d.accessKeyId,
+        secretAccessKey: d.secretAccessKey,
+        sessionToken: d.sessionToken || undefined,
+        region: d.region,
+        bucket: d.bucket,
+        key: d.key,
+        distributionId: d.distributionId,
+        invalidationPath: d.invalidationPath,
+        viewer,
+        spec: docSpec,
+      });
+      setMsg(log);
+    } catch (e: any) {
+      setMsg(`CloudFront 배포 실패: ${e?.message ?? e}`);
+    } finally {
+      setBusy("");
+    }
+  }
+
   return (
     <div className="docs">
       <div className="docbar">
@@ -260,6 +292,9 @@ export function Docs() {
             </button>
             <button disabled={busy === "pages"} onClick={publishPages} title={`docs/${viewer === "swagger" ? "swagger.html" : "index.html"} 생성 → git add·commit·push`}>
               {busy === "pages" ? "배포 중…" : "🚀 GitHub Pages 배포"}
+            </button>
+            <button disabled={busy === "cf"} onClick={deployCf} title="Settings의 AWS 설정으로 S3 업로드 + CloudFront 무효화">
+              {busy === "cf" ? "배포 중…" : "☁ CloudFront 배포"}
             </button>
           </>
         )}
