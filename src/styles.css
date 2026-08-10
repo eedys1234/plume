@@ -497,6 +497,22 @@ button.active.danger:hover { background: #b0311f; }
 .varpophead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .varedit { margin: 0; }
 
+/* varpop: 환경변수 선택 리스트 */
+.varpick { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.varpicklabel { font-size: 11px; color: var(--text-dim); margin: 0 2px 6px; }
+.varpickfilter { width: 100%; margin-bottom: 6px; padding: 5px 8px; font-size: 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+.varpicklist { display: flex; flex-direction: column; gap: 2px; max-height: 190px; overflow: auto; }
+.varpickitem {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 6px 8px; border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: var(--text); cursor: pointer;
+}
+.varpickitem:hover { background: var(--accent-weak, var(--surface-2)); }
+.varpickitem.active { background: var(--accent-soft); border-color: transparent; }
+.varpickitem .vpk { flex: none; color: #7db5fb; font-size: 12px; }
+.varpickitem .vpv { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: 11.5px; }
+.varpickitem .vpcur { flex: none; font-size: 10px; font-weight: 700; color: var(--accent-hover); background: var(--surface); border-radius: 999px; padding: 1px 7px; }
+
 /* 응답 블록 삭제 */
 .respblock legend { display: flex; align-items: center; gap: 10px; }
 .respdel { padding: 1px 8px; font-size: 11px; color: var(--err); border-color: var(--line); }

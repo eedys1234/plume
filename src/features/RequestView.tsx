@@ -243,6 +243,7 @@ export function RequestView({ path, method }: { path: string; method: string }) 
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [bodyView, setBodyView] = useState<"pretty" | "raw">("pretty");
   const [openVar, setOpenVar] = useState<string | null>(null);
+  const [varFilter, setVarFilter] = useState(""); // varpop 환경변수 목록 필터
   const [respTab, setRespTab] = useState<"body" | "headers" | "timeline" | "tests">("body");
   const [snippets, setSnippets] = useState<[string, string][]>([]);
   const [snipLang, setSnipLang] = useState("curl");
@@ -300,6 +301,20 @@ export function RequestView({ path, method }: { path: string; method: string }) 
   const syncScroll = () => {
     if (urlHlRef.current && urlInputRef.current) urlHlRef.current.scrollLeft = urlInputRef.current.scrollLeft;
   };
+
+  // varpop에서 다른 환경변수를 고르면 URL의 {{현재토큰}}을 {{새변수}}로 교체(모든 occurrence).
+  function switchVar(newName: string) {
+    if (!openVar || newName === openVar) { setOpenVar(newName); return; }
+    const esc = openVar.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`\\{\\{\\s*${esc}\\s*\\}\\}`, "g");
+    const next = sendUrl.replace(re, `{{${newName}}}`);
+    setSendUrl(next);
+    setOpenVar(newName);
+    setVarFilter("");
+    // x-send-url 영속화(syncPathFromUrl과 동일 규칙, next 기준).
+    const defaultUrl = `{{baseUrl}}${extractPath(next) ?? path}`;
+    edit((o: any) => { if (next && next !== defaultUrl) o["x-send-url"] = next; else delete o["x-send-url"]; });
+  }
 
   // 본문 JSON 편집 → example 저장 + (object면) 스키마 필드 동기화(추가/수정/삭제).
   function setBody(text: string) {
@@ -537,16 +552,52 @@ export function RequestView({ path, method }: { path: string; method: string }) 
                   런타임 변수(스크립트): <b>{String(runtimeVars[openVar])}</b>
                 </p>
               ) : (
-                <label className="varedit">
-                  값 · 환경 {activeEnv()?.name ?? "(없음)"}
-                  <input
-                    autoFocus
-                    value={envVars[openVar] ?? ""}
-                    placeholder={envVars[openVar] === undefined ? "미정의 — 값을 입력하면 환경에 추가됩니다" : "(빈 값)"}
-                    onChange={(e) => setVariable(activeEnvId, openVar!, e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && setOpenVar(null)}
-                  />
-                </label>
+                <>
+                  <label className="varedit">
+                    값 · 환경 {activeEnv()?.name ?? "(없음)"}
+                    <input
+                      autoFocus
+                      value={envVars[openVar] ?? ""}
+                      placeholder={envVars[openVar] === undefined ? "미정의 — 값을 입력하면 환경에 추가됩니다" : "(빈 값)"}
+                      onChange={(e) => setVariable(activeEnvId, openVar!, e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && setOpenVar(null)}
+                    />
+                  </label>
+                  {Object.keys(envVars).length > 0 && (() => {
+                    const q = varFilter.trim().toLowerCase();
+                    const names = Object.keys(envVars).sort()
+                      .filter((n) => !q || n.toLowerCase().includes(q) || (envVars[n] ?? "").toLowerCase().includes(q));
+                    return (
+                      <div className="varpick">
+                        <div className="varpicklabel">이 위치에 사용할 변수 선택</div>
+                        {Object.keys(envVars).length > 6 && (
+                          <input
+                            className="varpickfilter"
+                            value={varFilter}
+                            placeholder="변수 검색…"
+                            onChange={(e) => setVarFilter(e.target.value)}
+                          />
+                        )}
+                        <div className="varpicklist">
+                          {names.map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              className={n === openVar ? "varpickitem active" : "varpickitem"}
+                              onClick={() => switchVar(n)}
+                              title={envVars[n] || "(빈 값)"}
+                            >
+                              <code className="vpk">{`{{${n}}}`}</code>
+                              <span className="vpv">{envVars[n] === "" ? "(빈 값)" : envVars[n]}</span>
+                              {n === openVar && <span className="vpcur">사용 중</span>}
+                            </button>
+                          ))}
+                          {names.length === 0 && <div className="hint tiny" style={{ padding: "8px 10px" }}>일치하는 변수 없음</div>}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>
               )}
             </div>
             </>
