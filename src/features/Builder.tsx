@@ -1,6 +1,6 @@
 // F1: Bruno식 요청 중심 Builder.
 // 좌: CollectionTree(우클릭 메뉴) / 우: 브레드크럼 + 요청 탭(multi-open) + RequestView.
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../ipc";
 import { tabKey, useStore, type Target } from "../store";
 import { useShallow } from "zustand/react/shallow";
@@ -194,7 +194,30 @@ export function Builder() {
   }
 
   const active = openTabs.find((t) => tabKey(t.path, t.method) === activeTab);
-  const activeSel = active ? { path: active.path, method: active.method } : null;
+  // selected 객체를 매 렌더 새로 만들면 CollectionTree memo가 깨진다 → 값이 바뀔 때만 새로.
+  const activeSel = useMemo(
+    () => (active ? { path: active.path, method: active.method } : null),
+    [active?.path, active?.method]
+  );
+
+  // 트리 콜백 안정화: 키입력마다 collections가 새 배열이 되지만, 비활성 컬렉션 트리는
+  // 동일 props면 memo로 리렌더를 건너뛴다. 인라인 콜백은 매번 새 신원이라 memo를 깨뜨리므로
+  // (1) 최신 menuFor 로직은 ref로 접근하고 (2) 래퍼 신원은 col.id 집합이 바뀔 때만 재생성한다.
+  const menuForRef = useRef(menuFor);
+  menuForRef.current = menuFor;
+  const colIdKey = collections.map((c) => c.id).join(" ");
+  const treeCbs = useMemo(() => {
+    const map: Record<string, { onSelectRequest: (p: string, m: string) => void; menuFor: (t: Target) => TreeMenuItem[] }> = {};
+    for (const col of collections) {
+      const id = col.id;
+      map[id] = {
+        onSelectRequest: (p, m) => { setActiveCollection(id); openTab(p, m); },
+        menuFor: (t) => menuForRef.current(id, t),
+      };
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colIdKey, setActiveCollection, openTab]);
 
   return (
     <div className="builder">
@@ -221,9 +244,9 @@ export function Builder() {
               isActive={col.id === activeCollectionId}
               collectionLabel={col.name}
               selected={activeSel}
-              onSelectCollection={(id) => setActiveCollection(id)}
-              onSelectRequest={(p, m) => { setActiveCollection(col.id); openTab(p, m); }}
-              menuFor={(t) => menuFor(col.id, t)}
+              onSelectCollection={setActiveCollection}
+              onSelectRequest={treeCbs[col.id].onSelectRequest}
+              menuFor={treeCbs[col.id].menuFor}
               filter={search}
             />
           ))}

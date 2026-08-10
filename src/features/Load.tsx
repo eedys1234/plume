@@ -1,5 +1,5 @@
 // 부하 테스트 탭. 단일 요청 · 폴더 그룹 · 커스텀 선택(여러 폴더의 요청 체크) 3가지 모드.
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api, type BodySpec, type HttpRequestSpec, type LoadResult } from "../ipc";
 import { listOperations, opFolder, specFolders, tabKey, useStore } from "../store";
 import { useShallow } from "zustand/react/shallow";
@@ -36,8 +36,9 @@ export function Load() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
-  const allOps = listOperations(spec);
-  const folders = specFolders(spec);
+  // 전체 스펙 순회는 무겁다(수천 오퍼레이션) → spec이 바뀔 때만 계산(입력창 타이핑엔 재계산 X).
+  const allOps = useMemo(() => listOperations(spec), [spec]);
+  const folders = useMemo(() => specFolders(spec), [spec]);
 
   function parseHeaders(): Record<string, string> {
     const h: Record<string, string> = {};
@@ -56,19 +57,28 @@ export function Load() {
     return { method, url, headers: parseHeaders(), query: {}, body, auth: { kind: "none" } };
   }
 
-  const folderReqs = allOps
-    .filter(({ op }) => { const f = opFolder(op); return f === folder || f.startsWith(folder + "/"); })
-    .map(({ path, method, op }) => opToRequest(path, method, op));
-  const customReqs = allOps
-    .filter(({ path, method }) => selected.has(tabKey(path, method)))
-    .map(({ path, method, op }) => opToRequest(path, method, op));
+  const folderReqs = useMemo(
+    () => allOps
+      .filter(({ op }) => { const f = opFolder(op); return f === folder || f.startsWith(folder + "/"); })
+      .map(({ path, method, op }) => opToRequest(path, method, op)),
+    [allOps, folder]
+  );
+  const customReqs = useMemo(
+    () => allOps
+      .filter(({ path, method }) => selected.has(tabKey(path, method)))
+      .map(({ path, method, op }) => opToRequest(path, method, op)),
+    [allOps, selected]
+  );
 
   const toggle = (key: string) =>
     setSelected((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
 
   // 커스텀 체크리스트: 폴더별 그룹.
-  const byFolder: Record<string, typeof allOps> = {};
-  for (const e of allOps) (byFolder[opFolder(e.op) || "(루트)"] ??= []).push(e);
+  const byFolder = useMemo(() => {
+    const m: Record<string, typeof allOps> = {};
+    for (const e of allOps) (m[opFolder(e.op) || "(루트)"] ??= []).push(e);
+    return m;
+  }, [allOps]);
 
   async function run() {
     const reqs = mode === "single" ? [buildSingle()] : mode === "folder" ? folderReqs : customReqs;

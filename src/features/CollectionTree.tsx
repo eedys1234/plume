@@ -6,7 +6,7 @@ import type { Spec } from "../ipc";
 import {
   buildTree,
   listOperations,
-  specFolders,
+  foldersFromOps,
   useStore,
   type FolderNode,
   type Target,
@@ -71,7 +71,7 @@ export const CollectionTree = memo(function CollectionTree({
       ),
     [spec, q]
   );
-  const tree = useMemo(() => buildTree(ops, q ? [] : specFolders(spec)), [ops, spec, q]);
+  const tree = useMemo(() => buildTree(ops, q ? [] : foldersFromOps(ops, spec)), [ops, spec, q]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [colOpen, setColOpen] = useState(true);
   const [menu, setMenu] = useState<{ x: number; y: number; target: Target } | null>(null);

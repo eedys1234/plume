@@ -603,6 +603,14 @@ export function specFolders(spec: Spec): string[] {
   return [...set].sort();
 }
 
+/** specFolders의 재순회 없는 버전: 이미 펼친 ops를 재사용(트리 빌드 시 spec 이중 순회 방지). */
+export function foldersFromOps(ops: { op: any }[], spec: Spec): string[] {
+  const set = new Set<string>();
+  for (const f of (spec?.["x-folders"] ?? [])) if (f) set.add(f);
+  for (const { op } of ops) { const f = opFolder(op); if (f) set.add(f); }
+  return [...set].sort();
+}
+
 // ─────────────────────────── 트리 ───────────────────────────
 
 export type OpEntry = { path: string; method: string; op: any };

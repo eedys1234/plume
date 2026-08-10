@@ -1,6 +1,6 @@
 // Bruno식 요청 중심 뷰: URL바(method+url+Send) + 서브탭(Params/Body/Headers/Auth/Responses/Docs) + 응답.
 // key={activeTab}로 마운트되므로 로컬 상태는 해당 operation에서 새로 초기화된다.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type AuthSpec, type HttpRequestSpec, type HttpResponse } from "../ipc";
 import { useStore } from "../store";
 import { useShallow } from "zustand/react/shallow";
@@ -263,8 +263,17 @@ export function RequestView({ path, method }: { path: string; method: string }) 
       api.codeSnippets(reqSpec(), activeEnv()).then(setSnippets).catch(() => setSnippets([]));
     }, 250);
     return () => clearTimeout(t);
+    // op 참조가 편집 시마다 바뀌므로 headers/params 변화를 포함한다(매 렌더 JSON.stringify 제거).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sub, op, method, sendUrl, bodyText, JSON.stringify(headers), JSON.stringify(params), auth]);
+  }, [sub, op, method, sendUrl, bodyText, auth]);
+
+  // 대형 응답 본문은 렌더마다 재직렬화하지 않도록 메모(URL 타이핑·탭 전환 시 재계산 방지).
+  const respBodyStr = useMemo(() => {
+    if (!resp) return "";
+    return resp.bodyJson !== undefined && resp.bodyJson !== null && bodyView === "pretty"
+      ? JSON.stringify(resp.bodyJson, null, 2)
+      : resp.bodyText;
+  }, [resp, bodyView]);
 
   if (!op) return <div className="reqview"><p className="hint">요청을 찾을 수 없습니다.</p></div>;
 
@@ -798,11 +807,7 @@ export function RequestView({ path, method }: { path: string; method: string }) 
             <div className="respempty">아직 응답이 없습니다 · <b>Send</b> 를 눌러 요청을 실행하세요</div>
           )}
           {resp && respTab === "body" && (
-            <pre className="code respbody">{
-              resp.bodyJson !== undefined && resp.bodyJson !== null && bodyView === "pretty"
-                ? JSON.stringify(resp.bodyJson, null, 2)
-                : resp.bodyText
-            }</pre>
+            <pre className="code respbody">{respBodyStr}</pre>
           )}
           {resp && respTab === "headers" && (
             resp.headers.length > 0 ? (

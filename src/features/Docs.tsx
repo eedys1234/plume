@@ -78,10 +78,15 @@ export function Docs() {
   );
   // 문서 대상: 특정 컬렉션 또는 "전체(모든 컬렉션 병합)".
   const [docSource, setDocSource] = useState<string>(activeCollectionId || "all");
-  const docSpec: any =
-    docSource === "all"
-      ? mergeSpecs(collections)
-      : collections.find((c) => c.id === docSource)?.spec ?? spec;
+  // 매 렌더 mergeSpecs로 새 객체를 만들면 아래 마크다운 IPC·redoc/swagger 직렬화가 매번 재실행된다.
+  // → 참조를 안정화(대상/컬렉션이 바뀔 때만 재계산).
+  const docSpec: any = useMemo(
+    () =>
+      docSource === "all"
+        ? mergeSpecs(collections)
+        : collections.find((c) => c.id === docSource)?.spec ?? spec,
+    [docSource, collections, spec]
+  );
   // 노트: [{id, body, createdAt}] 배열. 과거 문자열 형식은 단일 노트로 이관.
   const rawNotes = (spec as any)?.["x-notes"];
   const notes: Note[] = Array.isArray(rawNotes)

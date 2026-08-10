@@ -1,6 +1,6 @@
 // API Call Chain: 호출 스텝 목록을 만들고(컬렉션에서 가져오기 포함), 저장/불러오기,
 // 머메이드 시퀀스 다이어그램 미리보기 + .svg/.png 다운로드.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import mermaid from "mermaid";
 import { api } from "../ipc";
 import { pickSavePath } from "../dialog";
@@ -49,16 +49,17 @@ export function ApiCallChain() {
     if (!activeId && chains.length) setActiveId(chains[0].id);
   }, [chains, activeId]);
 
+  // mermaid 소스는 active(변경 시 새 참조)에서만 재계산 → 매 렌더 JSON.stringify 제거.
+  const mermaidSrc = useMemo(() => (active ? chainToMermaid(active) : ""), [active]);
   // 다이어그램 렌더.
   useEffect(() => {
-    if (!active) { setSvg(""); return; }
+    if (!mermaidSrc) { setSvg(""); return; }
     let alive = true;
-    mermaid.render(`chain_${_mid++}`, chainToMermaid(active))
+    mermaid.render(`chain_${_mid++}`, mermaidSrc)
       .then(({ svg }) => alive && setSvg(svg))
       .catch((e) => setMsg(`다이어그램 오류: ${e?.message ?? e}`));
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, JSON.stringify(active?.steps)]);
+  }, [mermaidSrc]);
 
   function updateChain(fn: (c: Chain) => void) {
     setChains(chains.map((c) => { if (c.id !== activeId) return c; const n = structuredClone(c); fn(n); return n; }));
