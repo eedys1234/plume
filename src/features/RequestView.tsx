@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, type AuthSpec, type HttpRequestSpec, type HttpResponse } from "../ipc";
 import { useStore } from "../store";
 import { useShallow } from "zustand/react/shallow";
-import { runScript, type BruApi } from "../script";
+import { runScript, runTests, type BruApi, type TestResult } from "../script";
 import { SchemaEditor } from "./SchemaEditor";
 import { ParamsEditor } from "./ParamsEditor";
 import { ExamplesEditor } from "./ExamplesEditor";
@@ -73,7 +73,7 @@ const HTTP_HEADERS = [
   "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-IP",
   "X-Request-ID", "X-Requested-With",
 ];
-type Sub = "params" | "body" | "headers" | "auth" | "script" | "responses" | "info" | "code";
+type Sub = "params" | "body" | "headers" | "auth" | "script" | "tests" | "responses" | "info" | "code";
 
 // 타입 → 샘플 값 (스키마 필드 추가 시 본문 JSON에 넣을 값).
 function sampleForType(type?: string): any {
@@ -240,8 +240,10 @@ export function RequestView({ path, method }: { path: string; method: string }) 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [scriptLogs, setScriptLogs] = useState<string[]>([]);
+  const [testResults, setTestResults] = useState<TestResult[]>([]);
+  const [bodyView, setBodyView] = useState<"pretty" | "raw">("pretty");
   const [openVar, setOpenVar] = useState<string | null>(null);
-  const [respTab, setRespTab] = useState<"body" | "headers" | "timeline">("body");
+  const [respTab, setRespTab] = useState<"body" | "headers" | "timeline" | "tests">("body");
   const [snippets, setSnippets] = useState<[string, string][]>([]);
   const [snipLang, setSnipLang] = useState("curl");
   const [snipCopied, setSnipCopied] = useState(false);
@@ -363,6 +365,7 @@ export function RequestView({ path, method }: { path: string; method: string }) 
   async function send() {
     setBusy(true);
     setMsg("");
+    setTestResults([]);
     const logs: string[] = [];
     try {
       // bru: 환경/런타임 변수 접근 (스크립트에서 사용)
@@ -414,8 +417,9 @@ export function RequestView({ path, method }: { path: string; method: string }) 
       setResp(r);
       setDlExt(guessDownload(r).ext); // 응답마다 추정 확장자로 초기화
 
-      // Post-response Script: 요청 → 폴더(자식→부모) → 컬렉션 순.
-      if (posts.length) {
+      // Post-response Script + Tests: 응답 컨텍스트 공유.
+      const testCode = op["x-tests"] as string | undefined;
+      if (posts.length || testCode) {
         const resCtx = {
           status: r.status,
           statusText: r.statusText,
@@ -423,10 +427,19 @@ export function RequestView({ path, method }: { path: string; method: string }) 
           body: r.bodyJson ?? r.bodyText,
           responseTime: r.elapsedMs,
         };
+        // Post-response Script: 요청 → 폴더(자식→부모) → 컬렉션 순.
         for (const post of posts) {
           const rr = runScript(post, { bru, res: resCtx });
           logs.push(...rr.logs);
           if (rr.error) logs.push("✖ post-script: " + rr.error);
+        }
+        // Tests(assertion): 결과를 응답 Tests 탭에 표시.
+        if (testCode) {
+          const tr = runTests(testCode, { bru, res: resCtx });
+          logs.push(...tr.logs);
+          if (tr.error) logs.push("✖ tests: " + tr.error);
+          setTestResults(tr.results);
+          if (tr.results.length) setRespTab("tests");
         }
       }
       setScriptLogs(logs);
@@ -538,7 +551,7 @@ export function RequestView({ path, method }: { path: string; method: string }) 
       <div className="reqpane">
       {/* 서브탭 */}
       <div className="reqsubtabs">
-        {(["info", "params", "headers", "auth", "body", "responses", "script", "code"] as Sub[]).map((s) => (
+        {(["info", "params", "headers", "auth", "body", "responses", "script", "tests", "code"] as Sub[]).map((s) => (
           <button key={s} className={sub === s ? "st active" : "st"} onClick={() => setSub(s)}>
             {s === "info" ? "Info" : s === "code" ? "Snippet" : s[0].toUpperCase() + s.slice(1)}
             {s === "params" && dot(params.length > 0)}
@@ -546,6 +559,7 @@ export function RequestView({ path, method }: { path: string; method: string }) 
             {s === "headers" && dot(headers.length > 0)}
             {s === "auth" && dot(auth.kind !== "none")}
             {s === "script" && dot(!!op["x-pre-request-script"] || !!op["x-post-response-script"])}
+            {s === "tests" && dot(!!op["x-tests"])}
             {s === "responses" && dot(Object.keys(op.responses ?? {}).length > 0)}
           </button>
         ))}
@@ -649,6 +663,21 @@ export function RequestView({ path, method }: { path: string; method: string }) 
             <pre className="code scriptlog">{scriptLogs.length ? scriptLogs.join("\n") : "(Send 시 스크립트 로그가 여기 표시)"}</pre>
           </div>
         )}
+        {sub === "tests" && (
+          <div>
+            <div className="sublabel">Tests · JS (test, expect, assert, res, bru, console)</div>
+            <textarea
+              rows={12} className="scriptedit"
+              value={op["x-tests"] ?? ""}
+              onChange={(e) => edit((o) => { const v = e.target.value; if (v) o["x-tests"] = v; else delete o["x-tests"]; })}
+              placeholder={"// Send 후 응답을 검증합니다. 결과는 우측 응답 Tests 탭에 표시됩니다.\ntest('상태 200', () => {\n  expect(res.status).toBe(200);\n});\ntest('body.state 참', () => {\n  expect(res.body.state).toBeTruthy();\n  expect(res.body.data.pageInfo.size).toBeGreaterThan(0);\n});"}
+            />
+            <p className="hint tiny">
+              matchers: toBe · toEqual · toBeTruthy/Falsy · toBeDefined · toBeNull · toContain · toHaveLength ·
+              toBeGreaterThan(OrEqual) · toBeLessThan(OrEqual) · toMatch · <code>.not</code> 지원
+            </p>
+          </div>
+        )}
         {sub === "responses" && <ResponsesEditor path={path} method={method} />}
         {sub === "info" && (
           <div>
@@ -732,7 +761,20 @@ export function RequestView({ path, method }: { path: string; method: string }) 
             Headers{resp && resp.headers.length > 0 && <span className="hcount">{resp.headers.length}</span>}
           </button>
           <button className={respTab === "timeline" ? "rt active" : "rt"} onClick={() => setRespTab("timeline")}>Timeline</button>
+          {testResults.length > 0 && (() => {
+            const failed = testResults.filter((t) => !t.passed).length;
+            return (
+              <button className={respTab === "tests" ? "rt active" : "rt"} onClick={() => setRespTab("tests")}>
+                Tests<span className={failed ? "hcount bad" : "hcount good"}>{failed ? `${testResults.length - failed}/${testResults.length}` : testResults.length}</span>
+              </button>
+            );
+          })()}
           <span className="spacer" />
+          {resp && respTab === "body" && resp.bodyJson !== undefined && resp.bodyJson !== null && (
+            <button className="minibtn" title="Pretty ↔ Raw" onClick={() => setBodyView((v) => (v === "pretty" ? "raw" : "pretty"))}>
+              {bodyView === "pretty" ? "Raw" : "Prettify"}
+            </button>
+          )}
           {resp && (
             <>
               <span className={`respstatus s${Math.floor(resp.status / 100)}`}>{resp.status} {resp.statusText}</span>
@@ -756,7 +798,11 @@ export function RequestView({ path, method }: { path: string; method: string }) 
             <div className="respempty">아직 응답이 없습니다 · <b>Send</b> 를 눌러 요청을 실행하세요</div>
           )}
           {resp && respTab === "body" && (
-            <pre className="code respbody">{resp.bodyJson ? JSON.stringify(resp.bodyJson, null, 2) : resp.bodyText}</pre>
+            <pre className="code respbody">{
+              resp.bodyJson !== undefined && resp.bodyJson !== null && bodyView === "pretty"
+                ? JSON.stringify(resp.bodyJson, null, 2)
+                : resp.bodyText
+            }</pre>
           )}
           {resp && respTab === "headers" && (
             resp.headers.length > 0 ? (
@@ -779,6 +825,30 @@ export function RequestView({ path, method }: { path: string; method: string }) 
                 <>
                   <div className="sublabel" style={{ marginTop: 10 }}>Script Console</div>
                   <pre className="code scriptlog">{scriptLogs.join("\n")}</pre>
+                </>
+              )}
+            </div>
+          )}
+          {resp && respTab === "tests" && (
+            <div className="testresults">
+              {testResults.length === 0 ? (
+                <div className="respempty">정의된 테스트가 없습니다 · 좌측 <b>Tests</b> 탭에서 작성하세요</div>
+              ) : (
+                <>
+                  <div className="testsummary">
+                    <span className="tpass">✓ {testResults.filter((t) => t.passed).length}</span>
+                    <span className="tfail">✕ {testResults.filter((t) => !t.passed).length}</span>
+                    <span className="status">/ 총 {testResults.length}</span>
+                  </div>
+                  <ul className="testlist">
+                    {testResults.map((t, i) => (
+                      <li key={i} className={t.passed ? "tr pass" : "tr fail"}>
+                        <span className="tmark">{t.passed ? "✓" : "✕"}</span>
+                        <span className="tname">{t.name}</span>
+                        {!t.passed && t.error && <span className="terr">{t.error}</span>}
+                      </li>
+                    ))}
+                  </ul>
                 </>
               )}
             </div>

@@ -530,6 +530,25 @@ button.active.danger:hover { background: #b0311f; }
 .timeline .tlrow { display: flex; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .timeline .tlrow > span:first-child { width: 78px; flex: none; color: var(--text-dim); }
 .timeline .tlrow code { word-break: break-all; }
+.resptabbar .rt .hcount.good { background: var(--ok, #2e9e5b); color: #fff; }
+.resptabbar .rt .hcount.bad { background: var(--danger, #c0392b); color: #fff; }
+.resptabbar .minibtn { padding: 3px 10px; font-size: 11.5px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
+.resptabbar .minibtn:hover { background: var(--accent-weak, var(--line)); }
+
+/* 응답 Tests 결과 */
+.testresults { padding: 10px 14px; overflow: auto; }
+.testsummary { display: flex; align-items: center; gap: 12px; padding: 4px 2px 10px; font-size: 13px; font-weight: 650; }
+.testsummary .tpass { color: var(--ok, #2e9e5b); }
+.testsummary .tfail { color: var(--danger, #c0392b); }
+.testlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.testlist .tr { display: flex; align-items: baseline; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-left-width: 3px; border-radius: 6px; background: var(--surface); font-size: 12.5px; }
+.testlist .tr.pass { border-left-color: var(--ok, #2e9e5b); }
+.testlist .tr.fail { border-left-color: var(--danger, #c0392b); }
+.testlist .tr .tmark { font-weight: 800; }
+.testlist .tr.pass .tmark { color: var(--ok, #2e9e5b); }
+.testlist .tr.fail .tmark { color: var(--danger, #c0392b); }
+.testlist .tr .tname { flex: none; }
+.testlist .tr .terr { color: var(--text-dim); font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
 .authbox label { max-width: 480px; }
 .scriptedit { font-size: 12px; background: #080b11; }
 .scriptlog { max-height: 170px; margin-top: 4px; color: var(--text-dim); }
