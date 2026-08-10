@@ -241,14 +241,14 @@ export function RequestView({ path, method }: { path: string; method: string }) 
   const [msg, setMsg] = useState("");
   const [scriptLogs, setScriptLogs] = useState<string[]>([]);
   const [openVar, setOpenVar] = useState<string | null>(null);
-  const [respHeadersOpen, setRespHeadersOpen] = useState(true);
+  const [respTab, setRespTab] = useState<"body" | "headers" | "timeline">("body");
   const [snippets, setSnippets] = useState<[string, string][]>([]);
   const [snipLang, setSnipLang] = useState("curl");
   const [snipCopied, setSnipCopied] = useState(false);
   const [newTag, setNewTag] = useState("");
   const urlInputRef = useRef<HTMLInputElement>(null);
   const urlHlRef = useRef<HTMLDivElement>(null);
-  const [respH, setRespH] = usePersistedSize("plume:respH", 260, 120, 720);
+  const [respW, setRespW] = usePersistedSize("plume:respW", 560, 320, 1100);
 
   // op가 없어도 훅 호출 수가 일정해야 하므로 params/headers·스니펫 이펙트를 가드보다 위에 둔다.
   const params = (op?.parameters ?? []).filter((p: any) => p?.in !== "header");
@@ -533,6 +533,9 @@ export function RequestView({ path, method }: { path: string; method: string }) 
         <button className="active send" disabled={busy} onClick={send}>{busy ? "…" : "Send"}</button>
       </div>
 
+      {/* 좌(요청 탭+본문) / 우(응답) 가로 분할 */}
+      <div className="reqsplit">
+      <div className="reqpane">
       {/* 서브탭 */}
       <div className="reqsubtabs">
         {(["info", "params", "headers", "auth", "body", "responses", "script", "code"] as Sub[]).map((s) => (
@@ -717,56 +720,72 @@ export function RequestView({ path, method }: { path: string; method: string }) 
         )}
       </div>
 
-      {/* 응답 — 위 손잡이로 높이 조절 가능 */}
-      {(resp || msg) && (
-        <>
-          <Resizer axis="y" onDelta={(d) => setRespH((h) => h - d)} />
-          <div className="resppanel" style={{ height: respH, flex: "none" }}>
-            <div className="respbar">
-              {msg && <span className="err">{msg}</span>}
-              {resp && (
+      </div>{/* /.reqpane */}
+
+      <Resizer axis="x" onDelta={(d) => setRespW((w) => w - d)} />
+
+      {/* 응답 — 우측 패널(탭: Response/Headers/Timeline) · 너비 조절 가능 */}
+      <div className="resppane" style={{ width: respW, flex: "none" }}>
+        <div className="resptabbar">
+          <button className={respTab === "body" ? "rt active" : "rt"} onClick={() => setRespTab("body")}>Response</button>
+          <button className={respTab === "headers" ? "rt active" : "rt"} onClick={() => setRespTab("headers")}>
+            Headers{resp && resp.headers.length > 0 && <span className="hcount">{resp.headers.length}</span>}
+          </button>
+          <button className={respTab === "timeline" ? "rt active" : "rt"} onClick={() => setRespTab("timeline")}>Timeline</button>
+          <span className="spacer" />
+          {resp && (
+            <>
+              <span className={`respstatus s${Math.floor(resp.status / 100)}`}>{resp.status} {resp.statusText}</span>
+              <span className="status">{resp.elapsedMs}ms · {resp.sizeBytes}B</span>
+              {resp.isBinary && <span className="binbadge">bin</span>}
+              <span className="respdl">
+                <select value={dlExt} title="다운로드 형식(확장자)" onChange={(e) => setDlExt(e.target.value)}>
+                  {[...new Set([dlExt, ...DL_EXTS].filter(Boolean))].map((x) => (
+                    <option key={x} value={x}>.{x}</option>
+                  ))}
+                </select>
+                <button title="응답 다운로드" onClick={() => downloadResponse(dlExt || "bin")}>⬇</button>
+              </span>
+            </>
+          )}
+        </div>
+
+        <div className="resptabbody">
+          {msg && <p className="err" style={{ margin: "10px 16px" }}>{msg}</p>}
+          {!resp && !msg && (
+            <div className="respempty">아직 응답이 없습니다 · <b>Send</b> 를 눌러 요청을 실행하세요</div>
+          )}
+          {resp && respTab === "body" && (
+            <pre className="code respbody">{resp.bodyJson ? JSON.stringify(resp.bodyJson, null, 2) : resp.bodyText}</pre>
+          )}
+          {resp && respTab === "headers" && (
+            resp.headers.length > 0 ? (
+              <table className="respheadtable">
+                <tbody>
+                  {resp.headers.map(([k, v], i) => (
+                    <tr key={i}><td className="hk">{k}</td><td className="hv">{v}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <div className="respempty">응답 헤더가 없습니다</div>
+          )}
+          {resp && respTab === "timeline" && (
+            <div className="timeline">
+              <div className="tlrow"><span>Request</span><code>{method.toUpperCase()} {sendUrl}</code></div>
+              <div className="tlrow"><span>Status</span><span>{resp.status} {resp.statusText}</span></div>
+              <div className="tlrow"><span>Time</span><span>{resp.elapsedMs} ms</span></div>
+              <div className="tlrow"><span>Size</span><span>{resp.sizeBytes} B</span></div>
+              {scriptLogs.length > 0 && (
                 <>
-                  <span className={`respstatus s${Math.floor(resp.status / 100)}`}>{resp.status} {resp.statusText}</span>
-                  <span className="status">{resp.elapsedMs}ms · {resp.sizeBytes}B</span>
-                  {resp.isBinary && <span className="binbadge">바이너리</span>}
-                  <span className="respdl">
-                    <select
-                      value={dlExt}
-                      title="다운로드 형식(확장자)"
-                      onChange={(e) => setDlExt(e.target.value)}
-                    >
-                      {[...new Set([dlExt, ...DL_EXTS].filter(Boolean))].map((x) => (
-                        <option key={x} value={x}>.{x}</option>
-                      ))}
-                    </select>
-                    <button onClick={() => downloadResponse(dlExt || "bin")}>⬇ 다운로드</button>
-                  </span>
+                  <div className="sublabel" style={{ marginTop: 10 }}>Script Console</div>
+                  <pre className="code scriptlog">{scriptLogs.join("\n")}</pre>
                 </>
               )}
             </div>
-            {resp && resp.headers.length > 0 && (
-              <details className="respheaders" open={respHeadersOpen}>
-                <summary onClick={(e) => { e.preventDefault(); setRespHeadersOpen((v) => !v); }}>
-                  Response Headers <span className="hcount">{resp.headers.length}</span>
-                </summary>
-                <table className="respheadtable">
-                  <tbody>
-                    {resp.headers.map(([k, v], i) => (
-                      <tr key={i}>
-                        <td className="hk">{k}</td>
-                        <td className="hv">{v}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </details>
-            )}
-            {resp && (
-              <pre className="code respbody">{resp.bodyJson ? JSON.stringify(resp.bodyJson, null, 2) : resp.bodyText}</pre>
-            )}
-          </div>
-        </>
-      )}
+          )}
+        </div>
+      </div>
+      </div>{/* /.reqsplit */}
     </div>
   );
 }
