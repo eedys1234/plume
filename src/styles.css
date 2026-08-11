@@ -304,7 +304,9 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .tabs.subtabs { background: var(--bg); padding-left: 20px; }
 .tabs.subtabs .tab { padding: 7px 12px; font-size: 12px; }
 
-.content { flex: 1; overflow: hidden; }
+.content { flex: 1; overflow: hidden; display: flex; min-height: 0; min-width: 0; }
+/* keep-alive 화면 컨테이너: 활성만 display:flex(인라인), 나머지는 display:none. */
+.screenpane { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 
 /* 좌측 LNB 아이콘 레일 */
 .body { flex: 1; display: flex; overflow: hidden; min-height: 0; }
@@ -329,9 +331,10 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .apisearch .sortdir:hover { color: var(--text); border-color: var(--line-strong); }
 
 /* 단축키 도움말 모달 */
-.shortcutsmodal { width: 560px; max-width: 92vw; }
-.shortcutsbody { padding: 6px 16px 4px; max-height: 62vh; overflow: auto; }
-.scgroup { margin-bottom: 14px; }
+.shortcutsmodal { width: 780px; max-width: 94vw; }
+.shortcutsbody { padding: 6px 16px 4px; max-height: 66vh; overflow: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; align-content: start; }
+@media (max-width: 640px) { .shortcutsbody { grid-template-columns: 1fr; } }
+.scgroup { margin-bottom: 12px; break-inside: avoid; }
 .scgrouptitle { font-size: 11px; font-weight: 700; color: var(--accent-hover, var(--accent)); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 6px; }
 .sctable { width: 100%; border-collapse: collapse; }
 .sctable td { padding: 5px 4px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 12.5px; }

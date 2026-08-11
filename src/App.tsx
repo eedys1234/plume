@@ -501,18 +501,20 @@ export function App() {
             )}
 
             <main className="content">
-              <ErrorBoundary key={`${gnb}:${builderTab}`}>
-                <Suspense fallback={<div className="hint" style={{ padding: 20 }}>로딩 중…</div>}>
-                  {gnb === "builder" && builderTab === "design" && <Builder />}
-                  {gnb === "builder" && builderTab === "call" && <ApiCallChain />}
-                  {gnb === "builder" && builderTab === "load" && <Load />}
-                  {gnb === "builder" && builderTab === "docs" && <Docs />}
-                  {gnb === "environment" && <Environments />}
-                  {gnb === "git" && <Git />}
-                  {gnb === "history" && <History />}
-                  {gnb === "settings" && <Settings />}
-                </Suspense>
-              </ErrorBoundary>
+              <Suspense fallback={<div className="hint" style={{ padding: 20 }}>로딩 중…</div>}>
+                {/* Design(대형 트리)은 항상 마운트 유지, 표시만 토글 → 화면 이동 후 복귀가 즉시(재구성 없음) */}
+                <div className="screenpane" style={{ display: gnb === "builder" && builderTab === "design" ? "flex" : "none" }}>
+                  <ErrorBoundary><Builder /></ErrorBoundary>
+                </div>
+                {/* 나머지는 방문 시 마운트(숨김 상태의 불필요한 재계산·문서 재생성 방지) */}
+                {gnb === "builder" && builderTab === "call" && <div className="screenpane" style={{ display: "flex" }}><ErrorBoundary><ApiCallChain /></ErrorBoundary></div>}
+                {gnb === "builder" && builderTab === "load" && <div className="screenpane" style={{ display: "flex" }}><ErrorBoundary><Load /></ErrorBoundary></div>}
+                {gnb === "builder" && builderTab === "docs" && <div className="screenpane" style={{ display: "flex" }}><ErrorBoundary><Docs /></ErrorBoundary></div>}
+                {gnb === "environment" && <div className="screenpane" style={{ display: "flex" }}><ErrorBoundary><Environments /></ErrorBoundary></div>}
+                {gnb === "git" && <div className="screenpane" style={{ display: "flex" }}><ErrorBoundary><Git /></ErrorBoundary></div>}
+                {gnb === "history" && <div className="screenpane" style={{ display: "flex" }}><ErrorBoundary><History /></ErrorBoundary></div>}
+                {gnb === "settings" && <div className="screenpane" style={{ display: "flex" }}><ErrorBoundary><Settings /></ErrorBoundary></div>}
+              </Suspense>
             </main>
           </div>
         </div>
@@ -690,13 +692,20 @@ const SHORTCUT_GROUPS: { title: string; hint?: string; items: ScItem[] }[] = [
 ];
 
 const hangul = /[가-힣]/;
+const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform || navigator.userAgent || "");
+// Mac 표기: Ctrl→⌘, Shift→⇧. 단 Tab 전환/닫기는 macOS에서 Cmd가 OS 예약(앱 전환·창 닫기)이라 Control(⌃) 사용.
+function macLabel(tok: string, ctrlIsControl: boolean): string {
+  if (!IS_MAC) return tok;
+  return tok.replace(/Ctrl/g, ctrlIsControl ? "⌃" : "⌘").replace(/Shift/g, "⇧");
+}
 function ScKeys({ keys, mouse }: { keys: string; mouse?: boolean }) {
+  const ctrlIsControl = /Tab|Ctrl\+W/.test(keys); // macOS에서 Control 유지할 조합
   return (
     <>
       {keys.split(/\s+/).map((k, i) => {
         if (k === "/" || k === "~" || k === "·") return <span key={i} className="scsep">{k}</span>;
         if (mouse || hangul.test(k)) return <span key={i} className="scmouse">{k}</span>;
-        return <kbd key={i}>{k}</kbd>;
+        return <kbd key={i}>{macLabel(k, ctrlIsControl)}</kbd>;
       })}
     </>
   );
@@ -727,7 +736,11 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
             </div>
           ))}
         </div>
-        <p className="hint tiny" style={{ margin: "6px 16px 12px" }}>macOS에서는 Ctrl 대신 ⌘(Cmd) 를 사용하세요.</p>
+        <p className="hint tiny" style={{ margin: "6px 16px 12px" }}>
+          {IS_MAC
+            ? "⌘ = Command · ⇧ = Shift · ⌃ = Control. 요청 탭 전환(Tab)·닫기(W)는 ⌃(Control) 을 사용하세요(⌘Tab·⌘W는 macOS 예약)."
+            : "macOS에서는 Ctrl 대신 ⌘(Cmd) 를 사용합니다(탭 전환·닫기는 Control)."}
+        </p>
       </div>
     </div>
   );
