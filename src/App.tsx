@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./ipc";
 import { pickDirectory } from "./dialog";
-import { LAST_FOLDER_KEY, PROJECT_ROOT_KEY, basename, emptySpec, useStore, type BuilderTab, type Gnb } from "./store";
+import { LAST_FOLDER_KEY, PROJECT_ROOT_KEY, basename, emptySpec, tabKey, useStore, type BuilderTab, type Gnb } from "./store";
 import { useShallow } from "zustand/react/shallow";
 import { useStore as useZustandStore } from "zustand";
 import { checkForUpdate, needsUpdate, applyUpdate, CURRENT_VERSION, type UpdateCheck, type UpdateInfo } from "./update";
@@ -171,6 +171,24 @@ export function App() {
       if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
         e.preventDefault();
         void saveWorkspace(false);
+      }
+      // 요청 탭 전환/닫기: Ctrl+Tab=다음, Ctrl+Shift+Tab=이전, Ctrl+W=현재 탭 닫기.
+      if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
+        const st = useStore.getState();
+        if (st.openTabs.length > 1) {
+          e.preventDefault();
+          const keys = st.openTabs.map((t) => tabKey(t.path, t.method));
+          const idx = Math.max(0, keys.indexOf(st.activeTab ?? ""));
+          const n = e.shiftKey ? (idx - 1 + keys.length) % keys.length : (idx + 1) % keys.length;
+          st.setActiveTab(keys[n]);
+        }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "w" || e.key === "W")) {
+        const st = useStore.getState();
+        const active = st.openTabs.find((t) => tabKey(t.path, t.method) === st.activeTab);
+        if (active) { e.preventDefault(); st.closeTab(active.path, active.method); }
+        return;
       }
       // 화면 이동: Ctrl+1..5 = Nav / Ctrl+Shift+1..4 = Builder 하위탭. (code로 레이아웃 무관)
       if ((e.ctrlKey || e.metaKey) && !e.altKey && /^Digit[1-5]$/.test(e.code)) {
@@ -614,35 +632,59 @@ const SHORTCUT_GROUPS: { title: string; hint?: string; items: ScItem[] }[] = [
   {
     title: "전역 · 모든 화면",
     items: [
-      ["Ctrl+1 ~ 5", "화면 전환: Builder · Env · Git · History · Settings"],
+      ["Ctrl+1", "Builder 로 이동"],
+      ["Ctrl+2", "Env(환경변수) 로 이동"],
+      ["Ctrl+3", "Git 으로 이동"],
+      ["Ctrl+4", "History 로 이동"],
+      ["Ctrl+5", "Settings 로 이동"],
       ["Ctrl+S", "워크스페이스 저장 (변경 시 2초 뒤 자동 저장도 됨)"],
       ["? / F1", "이 단축키 창 열기 · 닫기"],
       ["Esc", "열린 창 · 메뉴 닫기"],
     ],
   },
   {
-    title: "Builder · Design (요청 트리)",
+    title: "Builder · 하위 탭",
     items: [
-      ["Ctrl+Shift+1 ~ 4", "하위 탭: Design · API Call Chain · Run · Specification"],
-      ["Ctrl+Z", "되돌리기 (편집 · 드래그 · 컬렉션/폴더 조작)"],
-      ["Ctrl+Shift+Z / Ctrl+Y", "다시하기"],
-      ["우클릭", "트리: 새 폴더 · 새 요청 · 이름변경 · 복사 · 삭제 · 스크립트", "mouse"],
-      ["드래그", "요청을 다른 폴더 · 컬렉션으로 이동", "mouse"],
+      ["Ctrl+Shift+1", "Design (요청 트리·편집)"],
+      ["Ctrl+Shift+2", "API Call Chain"],
+      ["Ctrl+Shift+3", "Run (부하 실행)"],
+      ["Ctrl+Shift+4", "Specification (문서)"],
     ],
   },
   {
-    title: "Builder · 요청 편집",
+    title: "요청 탭 전환 · 닫기",
     items: [
+      ["Ctrl+Tab", "다음 요청 탭으로 이동 (A → B)"],
+      ["Ctrl+Shift+Tab", "이전 요청 탭으로 이동 (B → A)"],
+      ["Ctrl+W", "현재 요청 탭 닫기"],
+      ["우클릭", "탭 메뉴: 닫기 · 왼쪽/오른쪽 닫기 · 다른 탭 닫기 · 복제", "mouse"],
+      ["‹  ›", "탭이 넘칠 때 좌우 스크롤 버튼", "mouse"],
+    ],
+  },
+  {
+    title: "요청 편집 · 실행",
+    items: [
+      ["Ctrl+Enter", "현재 요청 실행 (Send)"],
       ["Enter", "URL 바에서 경로 · 변수 반영", "key"],
-      ["우클릭", "요청 탭: 닫기 · 다른 탭 닫기 · 복제", "mouse"],
+      ["Ctrl+Z", "되돌리기 (편집 · 드래그 · 컬렉션/폴더 조작)"],
+      ["Ctrl+Shift+Z / Ctrl+Y", "다시하기"],
       ["클릭", "URL의 {{변수}} → 값 편집 · 다른 환경변수 선택", "mouse"],
+    ],
+  },
+  {
+    title: "트리 (컬렉션 · 폴더 · 요청)",
+    items: [
+      ["클릭", "요청 열기 · 폴더 접기/펼치기", "mouse"],
+      ["우클릭", "새 폴더 · 새 요청 · 이름변경 · 복사 · 삭제 · 스크립트", "mouse"],
+      ["드래그", "요청을 다른 폴더 · 컬렉션으로 이동", "mouse"],
+      ["정렬", "기준(경로/이름/폴더명/메서드) + 오름/내림 아이콘", "mouse"],
     ],
   },
   {
     title: "Specification · Settings",
     items: [
       ["버튼", "Specification: 단일 HTML · GitHub Pages · CloudFront 배포", "mouse"],
-      ["버튼", "Settings: AWS 자격증명 · 배포 설정(암호화 저장)", "mouse"],
+      ["버튼", "Settings: AWS 자격증명 · 배포 설정 (암호화 저장)", "mouse"],
     ],
   },
 ];

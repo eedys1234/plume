@@ -276,6 +276,22 @@ export function RequestView({ path, method }: { path: string; method: string }) 
       : resp.bodyText;
   }, [resp, bodyView]);
 
+  // Ctrl+Enter: 활성 요청 실행(Send). 최신 send/busy는 ref로 참조.
+  const sendRef = useRef<() => void>(() => {});
+  const busyRef = useRef(false);
+  sendRef.current = () => { void send(); };
+  busyRef.current = busy;
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !busyRef.current) {
+        e.preventDefault();
+        sendRef.current();
+      }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
+
   if (!op) return <div className="reqview"><p className="hint">요청을 찾을 수 없습니다.</p></div>;
 
   // URL 안의 {{변수}} 해석/토큰화 (하이라이팅·클릭용).
