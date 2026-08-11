@@ -608,45 +608,64 @@ function UpdateModal({ info, mock, updating, progress, onClose, onUpdate }: {
   );
 }
 
-// 단축키 도움말 모달.
-const SHORTCUT_GROUPS: { title: string; items: [string, string][] }[] = [
+// 단축키 도움말 모달 — 화면별로 구성. item: [keys, desc, "key"|"mouse"].
+type ScItem = [string, string, ("key" | "mouse")?];
+const SHORTCUT_GROUPS: { title: string; hint?: string; items: ScItem[] }[] = [
   {
-    title: "화면 이동",
+    title: "전역 · 모든 화면",
     items: [
-      ["Ctrl+1 ~ Ctrl+5", "Builder · Env · Git · History · Settings"],
-      ["Ctrl+Shift+1 ~ 4", "Builder 하위: Design · API Call Chain · Run · Specification"],
-    ],
-  },
-  {
-    title: "편집",
-    items: [
+      ["Ctrl+1 ~ 5", "화면 전환: Builder · Env · Git · History · Settings"],
       ["Ctrl+S", "워크스페이스 저장 (변경 시 2초 뒤 자동 저장도 됨)"],
-      ["Ctrl+Z", "되돌리기"],
+      ["? / F1", "이 단축키 창 열기 · 닫기"],
+      ["Esc", "열린 창 · 메뉴 닫기"],
+    ],
+  },
+  {
+    title: "Builder · Design (요청 트리)",
+    items: [
+      ["Ctrl+Shift+1 ~ 4", "하위 탭: Design · API Call Chain · Run · Specification"],
+      ["Ctrl+Z", "되돌리기 (편집 · 드래그 · 컬렉션/폴더 조작)"],
       ["Ctrl+Shift+Z / Ctrl+Y", "다시하기"],
+      ["우클릭", "트리: 새 폴더 · 새 요청 · 이름변경 · 복사 · 삭제 · 스크립트", "mouse"],
+      ["드래그", "요청을 다른 폴더 · 컬렉션으로 이동", "mouse"],
     ],
   },
   {
-    title: "요청",
+    title: "Builder · 요청 편집",
     items: [
-      ["Enter (URL 바)", "요청 실행 경로/변수 반영"],
-      ["우클릭 (트리/탭)", "새로 만들기 · 복사 · 이름변경 · 닫기 등"],
+      ["Enter", "URL 바에서 경로 · 변수 반영", "key"],
+      ["우클릭", "요청 탭: 닫기 · 다른 탭 닫기 · 복제", "mouse"],
+      ["클릭", "URL의 {{변수}} → 값 편집 · 다른 환경변수 선택", "mouse"],
     ],
   },
   {
-    title: "도움말",
+    title: "Specification · Settings",
     items: [
-      ["?  또는  F1", "이 단축키 창 열기/닫기"],
-      ["Esc", "열린 창 닫기"],
+      ["버튼", "Specification: 단일 HTML · GitHub Pages · CloudFront 배포", "mouse"],
+      ["버튼", "Settings: AWS 자격증명 · 배포 설정(암호화 저장)", "mouse"],
     ],
   },
 ];
+
+const hangul = /[가-힣]/;
+function ScKeys({ keys, mouse }: { keys: string; mouse?: boolean }) {
+  return (
+    <>
+      {keys.split(/\s+/).map((k, i) => {
+        if (k === "/" || k === "~" || k === "·") return <span key={i} className="scsep">{k}</span>;
+        if (mouse || hangul.test(k)) return <span key={i} className="scmouse">{k}</span>;
+        return <kbd key={i}>{k}</kbd>;
+      })}
+    </>
+  );
+}
 
 function ShortcutsModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="modalbg" onClick={onClose}>
       <div className="modal shortcutsmodal" onClick={(e) => e.stopPropagation()}>
         <div className="iomodalhead">
-          <h3>⌨ 단축키</h3>
+          <h3>⌨ 단축키 · 화면별 안내</h3>
           <button onClick={onClose}>닫기</button>
         </div>
         <div className="shortcutsbody">
@@ -655,11 +674,9 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
               <div className="scgrouptitle">{g.title}</div>
               <table className="sctable">
                 <tbody>
-                  {g.items.map(([keys, desc]) => (
-                    <tr key={keys}>
-                      <td className="sckeys">{keys.split(/\s+/).map((k, i) => (
-                        k === "/" || k === "~" || k === "또는" || k === "" ? <span key={i} className="scsep">{k}</span> : <kbd key={i}>{k}</kbd>
-                      ))}</td>
+                  {g.items.map(([keys, desc, kind], i) => (
+                    <tr key={i}>
+                      <td className="sckeys"><ScKeys keys={keys} mouse={kind === "mouse"} /></td>
                       <td className="scdesc">{desc}</td>
                     </tr>
                   ))}

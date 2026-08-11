@@ -21,31 +21,36 @@ export interface TreeMenuItem {
 // 한 번에 그리지 않도록 → 최초 로드 버벅임/응답없음 방지). 작은 컬렉션은 펼친 채 유지.
 const BIG_COLLECTION = 60;
 
-// 트리 정렬 기준.
-export type TreeSort = "path" | "name-asc" | "name-desc" | "method";
-export const TREE_SORTS: { id: TreeSort; label: string }[] = [
-  { id: "path", label: "경로순" },
-  { id: "name-asc", label: "이름 A→Z" },
-  { id: "name-desc", label: "이름 Z→A" },
-  { id: "method", label: "메서드순" },
+// 트리 정렬: 기준(필드) + 방향(오름/내림)을 분리.
+export type SortField = "path" | "name" | "folder" | "method";
+export type SortDir = "asc" | "desc";
+export const SORT_FIELDS: { id: SortField; label: string }[] = [
+  { id: "path", label: "경로" },
+  { id: "name", label: "요청 이름" },
+  { id: "folder", label: "폴더명" },
+  { id: "method", label: "메서드" },
 ];
 const METHOD_ORDER = ["get", "post", "put", "patch", "delete", "head", "options", "trace"];
 const reqName = (e: { op?: any; path: string }) => (e.op?.summary || e.path).toLowerCase();
 
-function sortRequests(reqs: { path: string; method: string; op?: any }[], mode: TreeSort) {
-  const arr = [...reqs];
-  switch (mode) {
-    case "name-asc": arr.sort((a, b) => reqName(a).localeCompare(reqName(b))); break;
-    case "name-desc": arr.sort((a, b) => reqName(b).localeCompare(reqName(a))); break;
-    case "method":
-      arr.sort((a, b) => {
-        const d = METHOD_ORDER.indexOf(a.method) - METHOD_ORDER.indexOf(b.method);
-        return d !== 0 ? d : reqName(a).localeCompare(reqName(b));
-      });
-      break;
-    default: arr.sort((a, b) => a.path.localeCompare(b.path)); // path
+// 요청 비교(방향 적용 전, 오름차순 기준).
+function cmpRequests(a: { path: string; method: string; op?: any }, b: { path: string; method: string; op?: any }, field: SortField) {
+  switch (field) {
+    case "name": return reqName(a).localeCompare(reqName(b));
+    case "method": {
+      const d = METHOD_ORDER.indexOf(a.method) - METHOD_ORDER.indexOf(b.method);
+      return d !== 0 ? d : reqName(a).localeCompare(reqName(b));
+    }
+    // folder 기준일 땐 폴더 순서로 그룹핑되고 폴더 내부는 경로순.
+    case "folder":
+    case "path":
+    default: return a.path.localeCompare(b.path);
   }
-  return arr;
+}
+
+function sortRequests(reqs: { path: string; method: string; op?: any }[], field: SortField, dir: SortDir) {
+  const arr = [...reqs].sort((a, b) => cmpRequests(a, b, field));
+  return dir === "desc" ? arr.reverse() : arr;
 }
 
 // 트리의 모든 폴더 경로(중첩 포함)를 모은다(기본 접힘 초기화용).
@@ -67,7 +72,8 @@ export const CollectionTree = memo(function CollectionTree({
   menuFor,
   collectionLabel,
   filter,
-  sort = "path",
+  sortField = "path",
+  sortDir = "asc",
 }: {
   spec?: Spec;
   collectionId?: string;
@@ -78,7 +84,8 @@ export const CollectionTree = memo(function CollectionTree({
   menuFor?: (target: Target) => TreeMenuItem[];
   collectionLabel?: string;
   filter?: string;
-  sort?: TreeSort;
+  sortField?: SortField;
+  sortDir?: SortDir;
 }) {
   const storeSpec = useStore((s) => s.spec);
   const activeColId = useStore((s) => s.activeCollectionId);
@@ -140,9 +147,9 @@ export const CollectionTree = memo(function CollectionTree({
 
   function renderChildren(node: FolderNode, depth: number) {
     const subfolders = [...node.folders.values()].sort((a, b) =>
-      sort === "name-desc" ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name)
+      sortDir === "desc" ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name)
     );
-    const requests = sortRequests(node.requests, sort);
+    const requests = sortRequests(node.requests, sortField, sortDir);
     return (
       <>
         {subfolders.map((f) => {

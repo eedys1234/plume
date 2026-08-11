@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../ipc";
 import { tabKey, useStore, type Target } from "../store";
 import { useShallow } from "zustand/react/shallow";
-import { CollectionTree, TREE_SORTS, type TreeMenuItem, type TreeSort } from "./CollectionTree";
+import { CollectionTree, SORT_FIELDS, type TreeMenuItem, type SortField, type SortDir } from "./CollectionTree";
 import { RequestView } from "./RequestView";
 import { Resizer, usePersistedSize } from "./Resizer";
 
@@ -50,10 +50,14 @@ export function Builder() {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [branch, setBranch] = useState("");
   const [search, setSearch] = useState("");
-  const [sortMode, setSortMode] = useState<TreeSort>(() => {
-    try { return (localStorage.getItem("plume:treeSort") as TreeSort) || "path"; } catch { return "path"; }
+  const [sortField, setSortField] = useState<SortField>(() => {
+    try { return (localStorage.getItem("plume:sortField") as SortField) || "path"; } catch { return "path"; }
   });
-  const changeSort = (m: TreeSort) => { setSortMode(m); try { localStorage.setItem("plume:treeSort", m); } catch { /* 무시 */ } };
+  const [sortDir, setSortDir] = useState<SortDir>(() => {
+    try { return (localStorage.getItem("plume:sortDir") as SortDir) || "asc"; } catch { return "asc"; }
+  });
+  const changeField = (m: SortField) => { setSortField(m); try { localStorage.setItem("plume:sortField", m); } catch { /* 무시 */ } };
+  const toggleDir = () => setSortDir((d) => { const n = d === "asc" ? "desc" : "asc"; try { localStorage.setItem("plume:sortDir", n); } catch { /* 무시 */ } return n; });
   const [navMenu, setNavMenu] = useState<{ x: number; y: number } | null>(null);
   const [showEnv, setShowEnv] = useState(false);
   const activeEnv = environments.find((e) => e.id === activeEnvId);
@@ -234,9 +238,21 @@ export function Builder() {
             placeholder="API 검색 (경로·메서드·요약)"
           />
           {search && <button className="clear" onClick={() => setSearch("")}>×</button>}
-          <select className="treesort" value={sortMode} onChange={(e) => changeSort(e.target.value as TreeSort)} title="정렬 기준">
-            {TREE_SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          <select className="treesort" value={sortField} onChange={(e) => changeField(e.target.value as SortField)} title="정렬 기준">
+            {SORT_FIELDS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
           </select>
+          <button
+            className="sortdir"
+            onClick={toggleDir}
+            title={sortDir === "asc" ? "오름차순 (A→Z) · 클릭하면 내림차순" : "내림차순 (Z→A) · 클릭하면 오름차순"}
+            aria-label={sortDir === "asc" ? "오름차순" : "내림차순"}
+          >
+            {sortDir === "asc" ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5h10M11 9h7M11 13h4"/><path d="M3 16l3 3 3-3"/><path d="M6 5v14"/></svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5h4M11 9h7M11 13h10"/><path d="M3 8l3-3 3 3"/><path d="M6 19V5"/></svg>
+            )}
+          </button>
         </div>
         {/* 여러 컬렉션 동시 표시 · 빈 곳 우클릭 → 새 컬렉션 */}
         <div
@@ -255,7 +271,8 @@ export function Builder() {
               onSelectRequest={treeCbs[col.id].onSelectRequest}
               menuFor={treeCbs[col.id].menuFor}
               filter={search}
-              sort={sortMode}
+              sortField={sortField}
+              sortDir={sortDir}
             />
           ))}
           <div className="navfill" />

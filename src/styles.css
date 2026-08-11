@@ -323,8 +323,10 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .apisearch input:focus { box-shadow: none; }
 .apisearch .clear { border: none; background: transparent; color: var(--text-faint); padding: 0 4px; font-size: 15px; }
 .apisearch .clear:hover { color: var(--err); }
-.apisearch .treesort { flex: none; border: none; background: transparent; color: var(--text-dim); font-size: 11px; padding: 2px 2px; cursor: pointer; max-width: 92px; }
+.apisearch .treesort { flex: none; border: none; background: transparent; color: var(--text-dim); font-size: 11px; padding: 2px 2px; cursor: pointer; max-width: 80px; }
 .apisearch .treesort:focus { box-shadow: none; }
+.apisearch .sortdir { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text-dim); cursor: pointer; }
+.apisearch .sortdir:hover { color: var(--text); border-color: var(--line-strong); }
 
 /* 단축키 도움말 모달 */
 .shortcutsmodal { width: 560px; max-width: 92vw; }
@@ -336,6 +338,7 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .sctable .sckeys { width: 46%; white-space: nowrap; }
 .sctable .scdesc { color: var(--text-dim); }
 .sctable .scsep { color: var(--text-faint); margin: 0 4px; }
+.sctable .scmouse { display: inline-block; font-size: 11px; padding: 1px 8px; margin: 0 2px; color: var(--text-dim); background: var(--surface); border: 1px dashed var(--line-strong); border-radius: 5px; }
 kbd {
   display: inline-block; font-family: var(--mono); font-size: 11px; line-height: 1.4;
   padding: 1px 7px; margin: 0 2px; color: var(--text);
