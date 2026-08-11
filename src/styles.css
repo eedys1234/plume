@@ -321,6 +321,25 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .apisearch input:focus { box-shadow: none; }
 .apisearch .clear { border: none; background: transparent; color: var(--text-faint); padding: 0 4px; font-size: 15px; }
 .apisearch .clear:hover { color: var(--err); }
+.apisearch .treesort { flex: none; border: none; background: transparent; color: var(--text-dim); font-size: 11px; padding: 2px 2px; cursor: pointer; max-width: 92px; }
+.apisearch .treesort:focus { box-shadow: none; }
+
+/* 단축키 도움말 모달 */
+.shortcutsmodal { width: 560px; max-width: 92vw; }
+.shortcutsbody { padding: 6px 16px 4px; max-height: 62vh; overflow: auto; }
+.scgroup { margin-bottom: 14px; }
+.scgrouptitle { font-size: 11px; font-weight: 700; color: var(--accent-hover, var(--accent)); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 6px; }
+.sctable { width: 100%; border-collapse: collapse; }
+.sctable td { padding: 5px 4px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 12.5px; }
+.sctable .sckeys { width: 46%; white-space: nowrap; }
+.sctable .scdesc { color: var(--text-dim); }
+.sctable .scsep { color: var(--text-faint); margin: 0 4px; }
+kbd {
+  display: inline-block; font-family: var(--mono); font-size: 11px; line-height: 1.4;
+  padding: 1px 7px; margin: 0 2px; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--line-strong);
+  border-radius: 5px; box-shadow: 0 1px 0 var(--line-strong);
+}
 
 /* History */
 .historyview { display: flex; flex-direction: column; height: 100%; }

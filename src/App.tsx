@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./ipc";
 import { pickDirectory } from "./dialog";
 import { LAST_FOLDER_KEY, PROJECT_ROOT_KEY, basename, emptySpec, useStore, type BuilderTab, type Gnb } from "./store";
@@ -84,6 +84,7 @@ export function App() {
   const [confirmDlg, setConfirmDlg] = useState<{ title: string; message: string; okLabel: string; danger?: boolean; onOk: () => void } | null>(null);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [showUpdate, setShowUpdate] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [checking, setChecking] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -129,26 +130,71 @@ export function App() {
     api.ping().then((p) => setStatus(`core: ${p}`)).catch(() => setStatus("core: 연결 실패"));
   }, []);
 
+  // 워크스페이스 저장(수동 Ctrl+S=silent:false, 자동=silent:true). 컬렉션+환경+체인+메타.
+  const saveWorkspace = useCallback(async (silent: boolean) => {
+    const st = useStore.getState();
+    const dir = st.projectDir;
+    if (!dir) { if (!silent) st.showToast("워크스페이스를 먼저 여세요", "err"); return; }
+    const cols = st.collections.map((c) => ({ name: c.name, spec: c.spec }));
+    try {
+      await api.saveWorkspaceCollections(dir, cols);
+      await st.persistClient(dir);
+      await api.writeTextFile(`${dir}/.apigen/chains.json`, JSON.stringify(st.chains, null, 2));
+      await api.writeTextFile(`${dir}/.plume/workspace.json`, JSON.stringify({ name: st.workspaceName || basename(dir) }, null, 2));
+      if (silent) {
+        setStatus(`자동 저장됨 · ${new Date().toLocaleTimeString()}`);
+      } else {
+        st.showToast(`저장됨 ✓ (컬렉션 ${cols.length})`);
+        st.logEvent("Save", `워크스페이스 저장 · ${st.workspaceName} · 컬렉션 ${cols.length}`);
+      }
+    } catch (err: any) {
+      if (silent) setStatus(`자동 저장 실패: ${err?.message ?? err}`);
+      else st.showToast(`저장 실패: ${err?.message ?? err}`, "err");
+    }
+  }, []);
+
+  // 자동 저장: collections/chains 변경 후 2초 뒤 조용히 저장(변경분만 쓰므로 저렴). 데이터 유실 방지.
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const unsub = useStore.subscribe((state: any, prev: any) => {
+      if (state.collections === prev.collections && state.chains === prev.chains) return;
+      if (!useStore.getState().projectDir) return;
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(() => { void saveWorkspace(true); }, 2000);
+    });
+    return () => { unsub(); if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+  }, [saveWorkspace]);
+
   // Ctrl+S: 워크스페이스의 모든 컬렉션 + 환경 + 체인 저장.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
         e.preventDefault();
-        const st = useStore.getState();
-        if (!st.projectDir) {
-          st.showToast("워크스페이스를 먼저 여세요", "err");
-          return;
-        }
-        const dir = st.projectDir;
-        const cols = st.collections.map((c) => ({ name: c.name, spec: c.spec }));
-        api
-          .saveWorkspaceCollections(dir, cols)
-          .then(() => st.persistClient(dir))
-          .then(() => api.writeTextFile(`${dir}/.apigen/chains.json`, JSON.stringify(st.chains, null, 2)))
-          .then(() => api.writeTextFile(`${dir}/.plume/workspace.json`, JSON.stringify({ name: st.workspaceName || basename(dir) }, null, 2)))
-          .then(() => { st.showToast(`저장됨 ✓ (컬렉션 ${cols.length})`); st.logEvent("Save", `워크스페이스 저장 · ${st.workspaceName} · 컬렉션 ${cols.length}`); })
-          .catch((err) => st.showToast(`저장 실패: ${err?.message ?? err}`, "err"));
+        void saveWorkspace(false);
       }
+      // 화면 이동: Ctrl+1..5 = Nav / Ctrl+Shift+1..4 = Builder 하위탭. (code로 레이아웃 무관)
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && /^Digit[1-5]$/.test(e.code)) {
+        e.preventDefault();
+        const n = Number(e.code.slice(5));
+        const st = useStore.getState();
+        if (e.shiftKey) {
+          const subs: BuilderTab[] = ["design", "call", "load", "docs"];
+          if (n <= 4) { st.setGnb("builder"); st.setBuilderTab(subs[n - 1]); }
+        } else {
+          const navs: Gnb[] = ["builder", "environment", "git", "history", "settings"];
+          st.setGnb(navs[n - 1]);
+        }
+        return;
+      }
+      // 단축키 도움말: ? (입력 중이 아닐 때). F1 도 허용.
+      const ae = document.activeElement as HTMLElement | null;
+      const typing = !!ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
+      if (!typing && (e.key === "?" || e.key === "F1")) {
+        e.preventDefault();
+        setShowShortcuts((v) => !v);
+        return;
+      }
+      if (e.key === "Escape" && showShortcuts) { setShowShortcuts(false); return; }
       // Ctrl+Z 되돌리기 / Ctrl+Shift+Z·Ctrl+Y 다시하기 (스펙·DnD·컬렉션·환경 전부).
       const z = e.key.toLowerCase() === "z";
       const y = e.key.toLowerCase() === "y";
@@ -164,7 +210,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [saveWorkspace, showShortcuts]);
 
   const errors = diagnostics.filter((d) => d.severity === "error").length;
   const warns = diagnostics.filter((d) => d.severity === "warning").length;
@@ -368,8 +414,11 @@ export function App() {
           <span className={errors ? "badge err" : "badge"}>err {errors}</span>
           <span className={warns ? "badge warn" : "badge"}>warn {warns}</span>
         </button>
+        <button className="iconbtn" title="단축키 보기 (?)" onClick={() => setShowShortcuts(true)}>⌨</button>
         <span className="status">{status}</span>
       </header>
+
+      {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
 
       {showDiag && (
         <>
@@ -554,6 +603,72 @@ function UpdateModal({ info, mock, updating, progress, onClose, onUpdate }: {
             <button className="active" onClick={onUpdate}>{mock ? "다운로드 열기" : "지금 업데이트"}</button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// 단축키 도움말 모달.
+const SHORTCUT_GROUPS: { title: string; items: [string, string][] }[] = [
+  {
+    title: "화면 이동",
+    items: [
+      ["Ctrl+1 ~ Ctrl+5", "Builder · Env · Git · History · Settings"],
+      ["Ctrl+Shift+1 ~ 4", "Builder 하위: Design · API Call Chain · Run · Specification"],
+    ],
+  },
+  {
+    title: "편집",
+    items: [
+      ["Ctrl+S", "워크스페이스 저장 (변경 시 2초 뒤 자동 저장도 됨)"],
+      ["Ctrl+Z", "되돌리기"],
+      ["Ctrl+Shift+Z / Ctrl+Y", "다시하기"],
+    ],
+  },
+  {
+    title: "요청",
+    items: [
+      ["Enter (URL 바)", "요청 실행 경로/변수 반영"],
+      ["우클릭 (트리/탭)", "새로 만들기 · 복사 · 이름변경 · 닫기 등"],
+    ],
+  },
+  {
+    title: "도움말",
+    items: [
+      ["?  또는  F1", "이 단축키 창 열기/닫기"],
+      ["Esc", "열린 창 닫기"],
+    ],
+  },
+];
+
+function ShortcutsModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="modalbg" onClick={onClose}>
+      <div className="modal shortcutsmodal" onClick={(e) => e.stopPropagation()}>
+        <div className="iomodalhead">
+          <h3>⌨ 단축키</h3>
+          <button onClick={onClose}>닫기</button>
+        </div>
+        <div className="shortcutsbody">
+          {SHORTCUT_GROUPS.map((g) => (
+            <div key={g.title} className="scgroup">
+              <div className="scgrouptitle">{g.title}</div>
+              <table className="sctable">
+                <tbody>
+                  {g.items.map(([keys, desc]) => (
+                    <tr key={keys}>
+                      <td className="sckeys">{keys.split(/\s+/).map((k, i) => (
+                        k === "/" || k === "~" || k === "또는" || k === "" ? <span key={i} className="scsep">{k}</span> : <kbd key={i}>{k}</kbd>
+                      ))}</td>
+                      <td className="scdesc">{desc}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+        <p className="hint tiny" style={{ margin: "6px 16px 12px" }}>macOS에서는 Ctrl 대신 ⌘(Cmd) 를 사용하세요.</p>
       </div>
     </div>
   );

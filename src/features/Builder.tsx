@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../ipc";
 import { tabKey, useStore, type Target } from "../store";
 import { useShallow } from "zustand/react/shallow";
-import { CollectionTree, type TreeMenuItem } from "./CollectionTree";
+import { CollectionTree, TREE_SORTS, type TreeMenuItem, type TreeSort } from "./CollectionTree";
 import { RequestView } from "./RequestView";
 import { Resizer, usePersistedSize } from "./Resizer";
 
@@ -50,6 +50,10 @@ export function Builder() {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [branch, setBranch] = useState("");
   const [search, setSearch] = useState("");
+  const [sortMode, setSortMode] = useState<TreeSort>(() => {
+    try { return (localStorage.getItem("plume:treeSort") as TreeSort) || "path"; } catch { return "path"; }
+  });
+  const changeSort = (m: TreeSort) => { setSortMode(m); try { localStorage.setItem("plume:treeSort", m); } catch { /* 무시 */ } };
   const [navMenu, setNavMenu] = useState<{ x: number; y: number } | null>(null);
   const [showEnv, setShowEnv] = useState(false);
   const activeEnv = environments.find((e) => e.id === activeEnvId);
@@ -230,6 +234,9 @@ export function Builder() {
             placeholder="API 검색 (경로·메서드·요약)"
           />
           {search && <button className="clear" onClick={() => setSearch("")}>×</button>}
+          <select className="treesort" value={sortMode} onChange={(e) => changeSort(e.target.value as TreeSort)} title="정렬 기준">
+            {TREE_SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
         </div>
         {/* 여러 컬렉션 동시 표시 · 빈 곳 우클릭 → 새 컬렉션 */}
         <div
@@ -248,6 +255,7 @@ export function Builder() {
               onSelectRequest={treeCbs[col.id].onSelectRequest}
               menuFor={treeCbs[col.id].menuFor}
               filter={search}
+              sort={sortMode}
             />
           ))}
           <div className="navfill" />

@@ -21,6 +21,33 @@ export interface TreeMenuItem {
 // 한 번에 그리지 않도록 → 최초 로드 버벅임/응답없음 방지). 작은 컬렉션은 펼친 채 유지.
 const BIG_COLLECTION = 60;
 
+// 트리 정렬 기준.
+export type TreeSort = "path" | "name-asc" | "name-desc" | "method";
+export const TREE_SORTS: { id: TreeSort; label: string }[] = [
+  { id: "path", label: "경로순" },
+  { id: "name-asc", label: "이름 A→Z" },
+  { id: "name-desc", label: "이름 Z→A" },
+  { id: "method", label: "메서드순" },
+];
+const METHOD_ORDER = ["get", "post", "put", "patch", "delete", "head", "options", "trace"];
+const reqName = (e: { op?: any; path: string }) => (e.op?.summary || e.path).toLowerCase();
+
+function sortRequests(reqs: { path: string; method: string; op?: any }[], mode: TreeSort) {
+  const arr = [...reqs];
+  switch (mode) {
+    case "name-asc": arr.sort((a, b) => reqName(a).localeCompare(reqName(b))); break;
+    case "name-desc": arr.sort((a, b) => reqName(b).localeCompare(reqName(a))); break;
+    case "method":
+      arr.sort((a, b) => {
+        const d = METHOD_ORDER.indexOf(a.method) - METHOD_ORDER.indexOf(b.method);
+        return d !== 0 ? d : reqName(a).localeCompare(reqName(b));
+      });
+      break;
+    default: arr.sort((a, b) => a.path.localeCompare(b.path)); // path
+  }
+  return arr;
+}
+
 // 트리의 모든 폴더 경로(중첩 포함)를 모은다(기본 접힘 초기화용).
 function allFolderPaths(node: FolderNode, acc: Set<string> = new Set()): Set<string> {
   for (const f of node.folders.values()) {
@@ -40,6 +67,7 @@ export const CollectionTree = memo(function CollectionTree({
   menuFor,
   collectionLabel,
   filter,
+  sort = "path",
 }: {
   spec?: Spec;
   collectionId?: string;
@@ -50,6 +78,7 @@ export const CollectionTree = memo(function CollectionTree({
   menuFor?: (target: Target) => TreeMenuItem[];
   collectionLabel?: string;
   filter?: string;
+  sort?: TreeSort;
 }) {
   const storeSpec = useStore((s) => s.spec);
   const activeColId = useStore((s) => s.activeCollectionId);
@@ -110,7 +139,10 @@ export const CollectionTree = memo(function CollectionTree({
   }
 
   function renderChildren(node: FolderNode, depth: number) {
-    const subfolders = [...node.folders.values()].sort((a, b) => a.name.localeCompare(b.name));
+    const subfolders = [...node.folders.values()].sort((a, b) =>
+      sort === "name-desc" ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name)
+    );
+    const requests = sortRequests(node.requests, sort);
     return (
       <>
         {subfolders.map((f) => {
@@ -133,7 +165,7 @@ export const CollectionTree = memo(function CollectionTree({
             </div>
           );
         })}
-        {node.requests.map(({ path, method, op }) => (
+        {requests.map(({ path, method, op }) => (
           <div
             key={`${method} ${path}`}
             draggable
