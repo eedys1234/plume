@@ -17,6 +17,19 @@ export interface TreeMenuItem {
   run: () => void;
 }
 
+// 이 개수를 넘는 대형 컬렉션은 폴더를 기본 접힘으로 시작한다(초기 렌더 시 요청 행 수백 개를
+// 한 번에 그리지 않도록 → 최초 로드 버벅임/응답없음 방지). 작은 컬렉션은 펼친 채 유지.
+const BIG_COLLECTION = 60;
+
+// 트리의 모든 폴더 경로(중첩 포함)를 모은다(기본 접힘 초기화용).
+function allFolderPaths(node: FolderNode, acc: Set<string> = new Set()): Set<string> {
+  for (const f of node.folders.values()) {
+    acc.add(f.path);
+    allFolderPaths(f, acc);
+  }
+  return acc;
+}
+
 export const CollectionTree = memo(function CollectionTree({
   spec: specProp,
   collectionId,
@@ -72,7 +85,11 @@ export const CollectionTree = memo(function CollectionTree({
     [spec, q]
   );
   const tree = useMemo(() => buildTree(ops, q ? [] : foldersFromOps(ops, spec)), [ops, spec, q]);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // 대형 컬렉션은 폴더를 기본 접힘으로 시작(최초 렌더 비용을 폴더 헤더 수준으로 축소).
+  // 트리는 col.id로 키되어 로드 시 리마운트되므로 초기화가 로드된 데이터로 다시 실행된다.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() =>
+    ops.length > BIG_COLLECTION ? allFolderPaths(tree) : new Set()
+  );
   const [colOpen, setColOpen] = useState(true);
   const [menu, setMenu] = useState<{ x: number; y: number; target: Target } | null>(null);
   const showTree = colOpen || !!q;
