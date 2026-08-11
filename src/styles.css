@@ -307,6 +307,8 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .content { flex: 1; overflow: hidden; display: flex; min-height: 0; min-width: 0; }
 /* keep-alive 화면 컨테이너: 활성만 display:flex(인라인), 나머지는 display:none. */
 .screenpane { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+/* 화면 루트(.builder/.git/.settings 등)가 패널 전체 폭·높이를 채우도록 flex 자식으로 확장. */
+.screenpane > * { flex: 1; min-width: 0; min-height: 0; }
 
 /* 좌측 LNB 아이콘 레일 */
 .body { flex: 1; display: flex; overflow: hidden; min-height: 0; }
@@ -330,8 +332,8 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .apisearch .sortdir { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text-dim); cursor: pointer; }
 .apisearch .sortdir:hover { color: var(--text); border-color: var(--line-strong); }
 
-/* 단축키 도움말 모달 */
-.shortcutsmodal { width: 780px; max-width: 94vw; }
+/* 단축키 도움말 모달 (.modal 의 width:400px 를 이기려면 명시도를 높여야 함) */
+.modal.shortcutsmodal { width: 780px; max-width: 94vw; }
 .shortcutsbody { padding: 6px 16px 4px; max-height: 66vh; overflow: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; align-content: start; }
 @media (max-width: 640px) { .shortcutsbody { grid-template-columns: 1fr; } }
 .scgroup { margin-bottom: 12px; break-inside: avoid; }
