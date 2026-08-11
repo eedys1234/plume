@@ -99,7 +99,15 @@ export function Settings() {
               Session Token <span className="hint tiny">(STS 임시 자격증명일 때만)</span>
               <input value={cfg.sessionToken} onChange={(e) => set({ sessionToken: e.target.value })} placeholder="(선택)" autoComplete="off" spellCheck={false} />
             </label>
+            <label className="settingwide">
+              IAM Role ARN <span className="hint tiny">(선택 · 지정 시 이 역할을 assume해 임시 자격증명으로 배포)</span>
+              <input value={cfg.roleArn} onChange={(e) => set({ roleArn: e.target.value })} placeholder="arn:aws:iam::123456789012:role/deploy-role" autoComplete="off" spellCheck={false} />
+            </label>
           </div>
+          <p className="hint tiny" style={{ marginTop: 8 }}>
+            Role ARN 을 넣으면 위 Access Key 로 <code>sts:AssumeRole</code> 을 호출해 임시 자격증명을 받은 뒤
+            그 권한으로 S3 업로드·CloudFront 무효화를 수행합니다(GitHub Actions의 role-to-assume 와 동일).
+          </p>
         </section>
 
         <div className="settingbar">

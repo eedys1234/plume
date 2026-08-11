@@ -58,6 +58,7 @@ export interface DeployInput {
   key: string;
   distributionId?: string;
   invalidationPath?: string;
+  roleArn?: string;
   viewer?: "redoc" | "swagger";
   title?: string;
   spec: Spec;

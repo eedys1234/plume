@@ -243,6 +243,7 @@ export function Docs() {
         key: d.key,
         distributionId: d.distributionId,
         invalidationPath: d.invalidationPath,
+        roleArn: d.roleArn || undefined,
         viewer,
         spec: docSpec,
       });

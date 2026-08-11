@@ -14,6 +14,7 @@ export interface DeploySettings {
   accessKeyId: string;
   secretAccessKey: string;
   sessionToken: string;
+  roleArn: string;
 }
 
 export const emptyDeploy = (): DeploySettings => ({
@@ -26,6 +27,7 @@ export const emptyDeploy = (): DeploySettings => ({
   accessKeyId: "",
   secretAccessKey: "",
   sessionToken: "",
+  roleArn: "",
 });
 
 const projectKey = (projectDir: string | null) => projectDir ?? "_default";

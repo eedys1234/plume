@@ -305,6 +305,8 @@ pub struct DeployIn {
     #[serde(default)]
     pub invalidation_path: String,
     #[serde(default)]
+    pub role_arn: String,
+    #[serde(default)]
     pub viewer: Option<String>,
     /// 문서 제목(비면 spec.info.title 사용).
     #[serde(default)]
@@ -335,6 +337,7 @@ pub fn deploy_cloudfront(input: DeployIn) -> CmdResult<String> {
         key,
         distribution_id: input.distribution_id,
         invalidation_path: input.invalidation_path,
+        role_arn: input.role_arn,
     };
     Ok(core::deploy::deploy_cloudfront(&creds, &cfg, &html)?)
 }

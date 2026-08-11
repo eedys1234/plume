@@ -31,6 +31,8 @@ pub struct DeployConfig {
     pub key: String,             // 오브젝트 키 (예: index.html, docs/index.html)
     pub distribution_id: String, // CloudFront 배포 ID
     pub invalidation_path: String, // 무효화 경로 (예: /*, /index.html)
+    /// (선택) 이 역할을 assume해 임시 자격증명으로 배포. 비면 기본 자격증명 직접 사용.
+    pub role_arn: String,
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -260,6 +262,38 @@ fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
+/// XML에서 `<tag>...</tag>` 첫 값 추출.
+fn xml_pick(text: &str, tag: &str) -> Option<String> {
+    text.split_once(&format!("<{tag}>"))
+        .and_then(|(_, r)| r.split_once(&format!("</{tag}>")))
+        .map(|(v, _)| v.to_string())
+}
+
+/// STS AssumeRole: 기본 자격증명으로 역할을 assume해 임시 자격증명을 받는다.
+/// GitHub Actions의 `aws-actions/configure-aws-credentials` role-to-assume 와 동일 개념.
+pub fn sts_assume_role(base: &AwsCreds, role_arn: &str, session_name: &str, now: SystemTime) -> Result<AwsCreds> {
+    let body = format!(
+        "Action=AssumeRole&Version=2011-06-15&RoleArn={}&RoleSessionName={}&DurationSeconds=3600",
+        uri_encode(role_arn, true),
+        uri_encode(session_name, true),
+    );
+    // STS 글로벌 엔드포인트(sts.amazonaws.com)는 us-east-1 로 서명한다.
+    let (status, text) = signed_send(
+        "POST", "sts.amazonaws.com", "us-east-1", "sts",
+        "/", "", Some("application/x-www-form-urlencoded"),
+        body.as_bytes(), base, now,
+    )?;
+    if !(200..300).contains(&status) {
+        return Err(CoreError::Http(format!("STS AssumeRole 실패({status}): {}", text.trim())));
+    }
+    let access_key_id = xml_pick(&text, "AccessKeyId")
+        .ok_or_else(|| CoreError::Http("STS 응답에 AccessKeyId 없음".into()))?;
+    let secret_access_key = xml_pick(&text, "SecretAccessKey")
+        .ok_or_else(|| CoreError::Http("STS 응답에 SecretAccessKey 없음".into()))?;
+    let session_token = xml_pick(&text, "SessionToken");
+    Ok(AwsCreds { access_key_id, secret_access_key, session_token })
+}
+
 /// 원클릭 배포: 문서 HTML을 S3에 올리고 CloudFront를 무효화한다. 사람이 읽을 로그 반환.
 pub fn deploy_cloudfront(creds: &AwsCreds, cfg: &DeployConfig, html: &str) -> Result<String> {
     if creds.access_key_id.trim().is_empty() || creds.secret_access_key.trim().is_empty() {
@@ -270,6 +304,16 @@ pub fn deploy_cloudfront(creds: &AwsCreds, cfg: &DeployConfig, html: &str) -> Re
     }
     let now = SystemTime::now();
     let mut log = String::new();
+
+    // Role ARN 이 있으면 먼저 AssumeRole 로 임시 자격증명을 받아 그걸로 배포한다.
+    let effective;
+    let creds = if !cfg.role_arn.trim().is_empty() {
+        effective = sts_assume_role(creds, cfg.role_arn.trim(), "plume-deploy", now)?;
+        log.push_str(&format!("✓ 역할 assume: {}\n", cfg.role_arn.trim()));
+        &effective
+    } else {
+        creds
+    };
 
     s3_put_object(creds, &cfg.region, &cfg.bucket, &cfg.key, "text/html; charset=utf-8", html.as_bytes(), now)?;
     log.push_str(&format!(
@@ -302,6 +346,15 @@ mod tests {
         assert_eq!(civil_from_epoch(0), (1970, 1, 1, 0, 0, 0));
         // 2000-03-01 (윤년 경계 다음날)
         assert_eq!(civil_from_epoch(951868800), (2000, 3, 1, 0, 0, 0));
+    }
+
+    #[test]
+    fn xml_pick_extracts_sts_credentials() {
+        let xml = r#"<AssumeRoleResult><Credentials><AccessKeyId>ASIA123</AccessKeyId><SecretAccessKey>sec/ret</SecretAccessKey><SessionToken>tok==</SessionToken></Credentials></AssumeRoleResult>"#;
+        assert_eq!(xml_pick(xml, "AccessKeyId").as_deref(), Some("ASIA123"));
+        assert_eq!(xml_pick(xml, "SecretAccessKey").as_deref(), Some("sec/ret"));
+        assert_eq!(xml_pick(xml, "SessionToken").as_deref(), Some("tok=="));
+        assert_eq!(xml_pick(xml, "Nope"), None);
     }
 
     #[test]
