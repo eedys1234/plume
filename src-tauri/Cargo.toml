@@ -18,6 +18,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"       # 네이티브 폴더/파일 선택 다이얼로그
 tauri-plugin-updater = "2"      # 서명 기반 자동 업데이트
 tauri-plugin-process = "2"      # 업데이트 후 재시작(relaunch)
+tauri-plugin-single-instance = "2" # 중복 실행 방지(두 번째 실행 시 기존 창 포커스)
 serde.workspace = true
 serde_json.workspace = true
 # 도메인 로직은 전부 코어에서 가져온다. 이 크레이트는 얇은 IPC 어댑터일 뿐.

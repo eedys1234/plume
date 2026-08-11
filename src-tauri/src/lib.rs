@@ -22,6 +22,11 @@ fn restore_window(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 중복 실행 방지: 두 번째 인스턴스가 뜨면 기존 창을 복원·포커스하고 새 창은 종료.
+        // (단일 인스턴스 플러그인은 가장 먼저 등록해야 한다.)
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            restore_window(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
