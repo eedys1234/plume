@@ -76,9 +76,12 @@ jobs:
           releaseBody: |
             설치파일을 내려받아 설치하세요. (Windows: .msi/.exe · macOS: .dmg)
 
-            ⚠️ **macOS**: 서명·공증 전이라 "Plume.app is damaged" 경고가 뜰 수 있습니다. 터미널에서 아래를 실행하면 열립니다:
+            ⚠️ **macOS**: Apple Developer 공증(notarization) 전이라 첫 실행 시 Gatekeeper 경고가 뜰 수 있습니다.
+            앱은 ad-hoc 서명되어 있어 아래 중 하나로 열 수 있습니다:
+            - **권장**: Applications의 `Plume.app`을 **우클릭 → 열기 → 열기**(최초 1회만).
+            - 또는 터미널에서 quarantine 제거:
             ```
-            sudo xattr -dr com.apple.quarantine /Applications/Plume.app
+            xattr -dr com.apple.quarantine /Applications/Plume.app
             ```
           releaseDraft: true
           prerelease: false
@@ -96,3 +99,16 @@ jobs:
 #   3) 릴리스를 Publish 하면 https://github.com/OWNER/REPO/releases/latest/download/latest.json 이 활성화되어
 #      기존 사용자 앱이 자동으로 새 버전을 감지·설치·재시작.
 # 로컬 단일 빌드: pnpm tauri build  (→ src-tauri/target/release/bundle/)
+#
+# ── macOS "damaged"/Gatekeeper 관련 ──────────────────────────────────
+#  · 현재: tauri.conf.json bundle.macOS.signingIdentity="-" 로 ad-hoc 서명.
+#    → arm64 무서명으로 인한 "is damaged" 는 해소. 단, 다운로드(quarantine) 시
+#      "확인되지 않은 개발자" 경고는 남아 우클릭→열기 또는 xattr 로 1회 허용 필요.
+#  · 완전 무경고를 원하면 Apple Developer($99/yr) 공증을 활성화한다. tauri-action이
+#    아래 env 를 읽어 서명+공증한다(Repo Secrets 등록):
+#      APPLE_CERTIFICATE            : Developer ID Application 인증서(.p12) base64
+#      APPLE_CERTIFICATE_PASSWORD   : .p12 비밀번호
+#      APPLE_SIGNING_IDENTITY       : "Developer ID Application: NAME (TEAMID)"
+#      APPLE_ID / APPLE_PASSWORD    : Apple ID + 앱 암호(app-specific password)
+#      APPLE_TEAM_ID                : 팀 ID
+#    그리고 signingIdentity 를 위 SIGNING_IDENTITY 값으로 바꾸면 서명·공증된 dmg 가 나온다.
