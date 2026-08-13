@@ -2,10 +2,11 @@
 // 머메이드 시퀀스 다이어그램 미리보기 + .svg/.png 다운로드.
 import { useEffect, useMemo, useState } from "react";
 import mermaid from "mermaid";
-import { api } from "../ipc";
+import { api, type AuthSpec, type HttpRequestSpec } from "../ipc";
 import { pickSavePath } from "../dialog";
 import { listOperations, useStore, type Chain } from "../store";
 import { useShallow } from "zustand/react/shallow";
+import { runScript, type BruApi } from "../script";
 import { CollectionTree } from "./CollectionTree";
 
 mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "loose" });
@@ -14,7 +15,9 @@ let _mid = 0;
 const clean = (s: string) => (s || "").replace(/[\n\r;:]+/g, " ").trim();
 
 function chainToMermaid(chain: Chain): string {
-  const lines = ["sequenceDiagram", "  participant U as Client", "  participant S as API"];
+  const client = clean(chain.clientLabel || "") || "Client";
+  const server = clean(chain.serverLabel || "") || "API";
+  const lines = ["sequenceDiagram", `  participant U as ${client}`, `  participant S as ${server}`];
   if (chain.steps.length === 0) lines.push("  note over U,S: 스텝을 추가하세요");
   chain.steps.forEach((st, i) => {
     const msg = `${st.method.toUpperCase()} ${clean(st.path)}${st.note ? " · " + clean(st.note) : ""}`;
@@ -22,6 +25,16 @@ function chainToMermaid(chain: Chain): string {
     lines.push(`  S-->>U: ${st.label ? clean(st.label) : "response"}`);
   });
   return lines.join("\n");
+}
+
+// 스텝 실행 결과.
+interface StepResult {
+  status?: number;
+  statusText?: string;
+  ms?: number;
+  ok?: boolean;
+  error?: string;
+  logs?: string[];
 }
 
 function svgSize(svg: string): { w: number; h: number } {
@@ -34,12 +47,19 @@ function svgSize(svg: string): { w: number; h: number } {
 }
 
 export function ApiCallChain() {
-  const { spec, collections, chains, setChains, projectDir, logEvent } = useStore(
-    useShallow((s) => ({ spec: s.spec, collections: s.collections, chains: s.chains, setChains: s.setChains, projectDir: s.projectDir, logEvent: s.logEvent }))
+  const { spec, collections, chains, setChains, projectDir, logEvent, environments, activeEnvId, setVariable, runtimeVars, setRuntimeVar } = useStore(
+    useShallow((s) => ({
+      spec: s.spec, collections: s.collections, chains: s.chains, setChains: s.setChains, projectDir: s.projectDir, logEvent: s.logEvent,
+      environments: s.environments, activeEnvId: s.activeEnvId, setVariable: s.setVariable, runtimeVars: s.runtimeVars, setRuntimeVar: s.setRuntimeVar,
+    }))
   );
+  const activeEnv = () => environments.find((e) => e.id === activeEnvId);
   const [activeId, setActiveId] = useState<string>(chains[0]?.id ?? "");
   const [svg, setSvg] = useState("");
   const [msg, setMsg] = useState("");
+  const [running, setRunning] = useState(false);
+  const [stopOnError, setStopOnError] = useState(true);
+  const [results, setResults] = useState<Record<number, StepResult>>({});
   const chainsPath = projectDir ? `${projectDir}/.apigen/chains.json` : null;
   const active = chains.find((c) => c.id === activeId) ?? null;
   // 체인은 App(loadFolder)에서 프로젝트 열 때 store로 로드되고 Ctrl+S/💾로 저장된다.
@@ -92,6 +112,79 @@ export function ApiCallChain() {
   function moveStep(i: number, dir: -1 | 1) {
     const j = i + dir;
     updateChain((c) => { if (j < 0 || j >= c.steps.length) return; [c.steps[i], c.steps[j]] = [c.steps[j], c.steps[i]]; });
+  }
+
+  // path+method 에 해당하는 operation 을 모든 컬렉션에서 찾는다(스텝은 여러 컬렉션 출처 가능).
+  function opForStep(path: string, method: string): any {
+    for (const c of collections) { const o = c.spec?.paths?.[path]?.[method.toLowerCase()]; if (o) return o; }
+    return spec?.paths?.[path]?.[method.toLowerCase()];
+  }
+  // operation → 실행용 요청 스펙(RequestView 와 동일 규칙: x-send-url·헤더·쿼리·본문 example·x-auth).
+  function buildReq(op: any, path: string, method: string): HttpRequestSpec {
+    const headers: Record<string, string> = {};
+    (op?.parameters ?? []).filter((p: any) => p?.in === "header").forEach((p: any) => p.name && (headers[p.name] = p.example ?? ""));
+    const query: Record<string, string> = {};
+    (op?.parameters ?? []).filter((p: any) => p?.in === "query").forEach((p: any) => p.name && (query[p.name] = p.example ?? ""));
+    const mt = Object.keys(op?.requestBody?.content ?? {})[0] || "application/json";
+    const ex = op?.requestBody?.content?.[mt]?.example;
+    const body: any = ex == null ? { kind: "none" } : typeof ex === "string" ? { kind: "text", value: ex } : { kind: "json", value: ex };
+    const a = op?.["x-auth"];
+    const auth: AuthSpec =
+      a?.kind === "bearer" ? { kind: "bearer", token: a.token }
+      : a?.kind === "basic" ? { kind: "basic", username: a.username, password: a.password }
+      : a?.kind === "apikey" ? { kind: "apikey", in: a.apiKeyIn, name: a.apiKeyName, value: a.apiKeyValue }
+      : { kind: "none" };
+    return { method: method.toUpperCase(), url: op?.["x-send-url"] || `{{baseUrl}}${path}`, headers, query, body, auth };
+  }
+
+  // 체인 실행: 각 스텝을 순차 HTTP 호출. 활성 환경 + 런타임변수로 해석하고,
+  // op의 post-response 스크립트로 변수(토큰 등)를 다음 스텝에 넘긴다(bru.setEnvVar/setVar).
+  async function runChain() {
+    if (!active || running) return;
+    if (!active.steps.length) { setMsg("실행할 스텝이 없습니다"); return; }
+    setRunning(true); setResults({}); setMsg("실행 중…");
+    // 런타임 변수는 실행 동안 로컬 누적(스크립트가 갱신) + 스토어에도 반영.
+    const runtime: Record<string, string> = { ...runtimeVars };
+    const bru: BruApi = {
+      getEnvVar: (k) => { const e = activeEnv(); return e?.variables[k] ?? e?.scriptVariables?.[k]; },
+      setEnvVar: (k, v) => setVariable(activeEnvId, k, String(v)),
+      getVar: (k) => runtime[k],
+      setVar: (k, v) => { runtime[k] = String(v); setRuntimeVar(k, String(v)); },
+    };
+    let okCount = 0;
+    for (let i = 0; i < active.steps.length; i++) {
+      const stp = active.steps[i];
+      const op = opForStep(stp.path, stp.method);
+      const logs: string[] = [];
+      if (!op) { setResults((r) => ({ ...r, [i]: { error: "operation 을 찾을 수 없음" } })); if (stopOnError) break; else continue; }
+      try {
+        const req = buildReq(op, stp.path, stp.method);
+        // pre-request script(op 수준)
+        const reqCtx: any = { method: req.method, url: req.url, headers: req.headers, query: req.query, body: (req.body as any).value,
+          setHeader: (k: string, v: unknown) => (reqCtx.headers[k] = String(v)), setUrl: (u: string) => (reqCtx.url = u), setBody: (b: unknown) => (reqCtx.body = b) };
+        if (op["x-pre-request-script"]) { const rr = runScript(op["x-pre-request-script"], { bru, req: reqCtx }); logs.push(...rr.logs); if (rr.error) logs.push("✖ pre: " + rr.error); }
+        // 활성 환경 + 런타임변수 병합해 {{변수}} 해석.
+        const e = activeEnv();
+        const env = e ? { ...e, variables: { ...e.variables, ...runtime } } : { id: "_", name: "_", variables: { ...runtime } } as any;
+        const sendBody: any = reqCtx.body == null ? { kind: "none" } : typeof reqCtx.body === "string" ? { kind: "text", value: reqCtx.body } : { kind: "json", value: reqCtx.body };
+        const r = await api.sendHttpRequest({ method: reqCtx.method, url: reqCtx.url, headers: reqCtx.headers, query: reqCtx.query, body: sendBody, auth: req.auth }, env);
+        const ok = r.status >= 200 && r.status < 400;
+        // post-response script(op 수준) — 변수 추출/전달.
+        if (op["x-post-response-script"]) {
+          const resCtx = { status: r.status, statusText: r.statusText, headers: Object.fromEntries(r.headers), body: r.bodyJson ?? r.bodyText, responseTime: r.elapsedMs };
+          const rr = runScript(op["x-post-response-script"], { bru, res: resCtx }); logs.push(...rr.logs); if (rr.error) logs.push("✖ post: " + rr.error);
+        }
+        setResults((rs) => ({ ...rs, [i]: { status: r.status, statusText: r.statusText, ms: r.elapsedMs, ok, logs } }));
+        if (ok) okCount++;
+        else if (stopOnError) { setMsg(`스텝 ${i + 1}에서 실패(${r.status}) — 중단`); break; }
+      } catch (err: any) {
+        setResults((rs) => ({ ...rs, [i]: { error: String(err?.message ?? err), logs } }));
+        if (stopOnError) { setMsg(`스텝 ${i + 1} 오류 — 중단`); break; }
+      }
+    }
+    setRunning(false);
+    setMsg((m) => (m === "실행 중…" ? `실행 완료 · 성공 ${okCount}/${active.steps.length}` : m));
+    logEvent("Chain", `체인 실행 · ${active.name} (성공 ${okCount}/${active.steps.length})`);
   }
 
   async function saveChains() {
@@ -196,6 +289,23 @@ export function ApiCallChain() {
         ) : (
           <>
             <input className="chainname" value={active.name} onChange={(e) => updateChain((c) => (c.name = e.target.value))} />
+
+            {/* 실행 바 */}
+            <div className="chainrun">
+              <button className="active runbtn" disabled={running || active.steps.length === 0} onClick={runChain}>
+                {running ? "실행 중…" : "▶ 실행"}
+              </button>
+              <label className="chainopt"><input type="checkbox" checked={stopOnError} onChange={(e) => setStopOnError(e.target.checked)} /> 실패 시 중단</label>
+              <span className="hint tiny">활성 환경: {activeEnv()?.name ?? "(없음)"} · post-script로 변수 전달</span>
+            </div>
+
+            {/* 시퀀스 다이어그램 주체 명칭(체인별) */}
+            <div className="chainactors">
+              <label>요청측<input value={active.clientLabel ?? ""} placeholder="Client" onChange={(e) => updateChain((c) => (c.clientLabel = e.target.value || undefined))} /></label>
+              <span className="arrow">→</span>
+              <label>응답측<input value={active.serverLabel ?? ""} placeholder="API" onChange={(e) => updateChain((c) => (c.serverLabel = e.target.value || undefined))} /></label>
+            </div>
+
             <div className="sublabel">호출 스텝 ({active.steps.length})</div>
             <ol className="chainsteps">
               {active.steps.length === 0 && <li className="hint tiny">왼쪽 트리에서 요청을 클릭해 스텝을 추가하세요.</li>}
@@ -210,6 +320,13 @@ export function ApiCallChain() {
                     placeholder="설명(선택)"
                     onChange={(e) => updateChain((c) => (c.steps[i].note = e.target.value || undefined))}
                   />
+                  {results[i] && (
+                    results[i].error
+                      ? <span className="stepres err" title={results[i].error}>✖ {results[i].error!.slice(0, 20)}</span>
+                      : <span className={`stepres s${Math.floor((results[i].status ?? 0) / 100)}`} title={(results[i].logs ?? []).join("\n") || undefined}>
+                          {results[i].status} · {results[i].ms}ms{(results[i].logs?.length ?? 0) > 0 ? " 📝" : ""}
+                        </span>
+                  )}
                   <button className="mini" title="위로" disabled={i === 0} onClick={() => moveStep(i, -1)}>↑</button>
                   <button className="mini" title="아래로" disabled={i === active.steps.length - 1} onClick={() => moveStep(i, 1)}>↓</button>
                   <button className="del" title="제거" onClick={() => updateChain((c) => c.steps.splice(i, 1))}>×</button>

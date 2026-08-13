@@ -42,6 +42,8 @@ export interface Chain {
   id: string;
   name: string;
   steps: ChainStep[];
+  clientLabel?: string; // 시퀀스 다이어그램 주체 명칭(요청측). 기본 "Client"
+  serverLabel?: string; // 시퀀스 다이어그램 주체 명칭(응답측). 기본 "API"
 }
 
 /** 빈 OAS 3.0 문서. */
