@@ -3,9 +3,51 @@
 // 서버가 준비되면 tauri.conf.json의 updater.endpoints만 유효하면 자동으로 실제 경로가 동작한다.
 
 import type { Update } from "@tauri-apps/plugin-updater";
+import { api } from "./ipc";
+import pkg from "../package.json";
+import { loadMeta } from "./appMeta";
 
-/** 현재 앱 버전(추후 tauri.conf.json/package.json과 동기화). */
-export const CURRENT_VERSION = "0.1.0";
+/** 현재 앱 버전. 빌드 시 package.json(=릴리스 태그로 동기화)에서 시작해, 런타임에 실제 설치 버전으로 갱신. */
+export let CURRENT_VERSION: string = (pkg as any).version ?? "0.0.0";
+
+/** 실제 설치된 앱 버전을 조회해 CURRENT_VERSION을 갱신한다(Tauri 아니면 package.json 값 유지). */
+export async function resolveAppVersion(): Promise<string> {
+  try {
+    const v = await api.appVersion();
+    if (v) CURRENT_VERSION = v;
+  } catch { /* 브라우저 dev: package.json 값 유지 */ }
+  return CURRENT_VERSION;
+}
+
+/** 버전 비교(semver-lite): a<b → 음수. */
+function cmpVer(a: string, b: string): number {
+  const pa = a.replace(/^v/, "").split(/[.-]/).map((n) => parseInt(n, 10) || 0);
+  const pb = b.replace(/^v/, "").split(/[.-]/).map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d) return d;
+  }
+  return 0;
+}
+
+/** GitHub releases/latest 태그를 조회해 업데이트 유무를 판단(서명 없이도 동작). */
+async function checkGithubTag(owner: string, repo: string, current: string): Promise<UpdateInfo | null> {
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`, {
+    headers: { Accept: "application/vnd.github+json" },
+  });
+  if (!res.ok) return null;
+  const j: any = await res.json();
+  const latest = String(j.tag_name ?? "").replace(/^v/, "");
+  if (!latest) return null;
+  return {
+    flag: cmpVer(current, latest) < 0 ? "Y" : "N",
+    currentVersion: current,
+    latestVersion: latest,
+    releaseNotes: j.body ?? "",
+    downloadUrl: j.html_url,
+    mandatory: false,
+  };
+}
 
 export interface UpdateInfo {
   flag: "Y" | "N";        // 업데이트 필요 여부(Y=있음)
@@ -23,46 +65,47 @@ export interface UpdateCheck {
   mock: boolean;          // 서버 미가동 등으로 mock 폴백했는지
 }
 
-const MOCK_INFO: UpdateInfo = {
-  flag: "Y",
-  currentVersion: CURRENT_VERSION,
-  latestVersion: "0.2.0",
-  releaseNotes: "• 워크스페이스/다중 컬렉션 개선\n• 시스템 트레이 최소화\n• .bru 컬렉션 Import\n• 여러 버그 수정",
-  downloadUrl: "https://github.com/plume/plume/releases/latest",
-  mandatory: false,
-};
-
 /**
- * 서버(서명된 매니페스트)에서 업데이트를 확인한다.
- * tauri-plugin-updater가 endpoints를 호출해 서명 검증까지 수행.
- * Tauri 런타임이 아니거나 서버가 없으면 mock으로 폴백(UI 시연용).
+ * 업데이트 확인(모두 GitHub 릴리스 태그 기반):
+ *  1) 서명된 tauri-plugin-updater(latest.json) → 있으면 자동 다운로드·설치 가능.
+ *  2) 없거나 미설정이면 GitHub releases/latest 태그를 조회해 버전 비교(수동 설치 폴백).
+ *  3) 둘 다 실패(오프라인 등)면 '최신'으로 간주.
  */
 export async function checkForUpdate(): Promise<UpdateCheck> {
+  const current = await resolveAppVersion();
+  const meta = await loadMeta(); // owner/repo (유동 변경 가능 · 로컬 파일/Settings)
+  // 1) 서명된 자동 업데이트(가능하면 최우선).
   try {
     const { check } = await import("@tauri-apps/plugin-updater");
     const upd = await check(); // Update | null (서명 검증 포함)
-    if (!upd) {
+    if (upd) {
       return {
-        info: { flag: "N", currentVersion: CURRENT_VERSION, latestVersion: CURRENT_VERSION, releaseNotes: "" },
-        update: null,
+        info: {
+          flag: "Y",
+          currentVersion: upd.currentVersion,
+          latestVersion: upd.version,
+          releaseNotes: upd.body ?? "",
+          downloadUrl: `https://github.com/${meta.owner}/${meta.repo}/releases/latest`,
+          mandatory: false,
+        },
+        update: upd,
         mock: false,
       };
     }
-    return {
-      info: {
-        flag: "Y",
-        currentVersion: upd.currentVersion,
-        latestVersion: upd.version,
-        releaseNotes: upd.body ?? "",
-        mandatory: false,
-      },
-      update: upd,
-      mock: false,
-    };
-  } catch {
-    // 브라우저 dev · 서버 미가동 등 → mock으로 흐름 시연.
-    return { info: MOCK_INFO, update: null, mock: true };
-  }
+  } catch { /* updater 미설정/네트워크 → 태그 확인으로 폴백 */ }
+
+  // 2) GitHub 태그 기반 확인(서명 없이도 동작 · 수동 설치 폴백).
+  try {
+    const info = await checkGithubTag(meta.owner, meta.repo, current);
+    if (info) return { info, update: null, mock: false };
+  } catch { /* 네트워크 실패 등 */ }
+
+  // 3) 확인 불가 → 최신으로 간주.
+  return {
+    info: { flag: "N", currentVersion: current, latestVersion: current, releaseNotes: "" },
+    update: null,
+    mock: false,
+  };
 }
 
 /** 업데이트가 실제로 필요한지(플래그 Y + 버전 다름). */

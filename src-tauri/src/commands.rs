@@ -354,6 +354,30 @@ pub fn deploy_config_load(app: tauri::AppHandle, project: String) -> CmdResult<O
     crate::secretstore::load(&app, &project).map_err(|m| core::CoreError::Project(m).into())
 }
 
+/// 앱 메타(version + 업데이트 GitHub owner/repo 등) JSON을 앱 설정 디렉터리의 appmeta.json 에 저장.
+#[tauri::command]
+pub fn app_meta_save(app: tauri::AppHandle, json: String) -> CmdResult<()> {
+    use tauri::Manager;
+    let dir = app.path().app_config_dir().map_err(|e| core::CoreError::Project(e.to_string()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| core::CoreError::Project(e.to_string()))?;
+    std::fs::write(dir.join("appmeta.json"), json).map_err(|e| core::CoreError::Project(e.to_string()))?;
+    Ok(())
+}
+
+/// appmeta.json 원문(JSON 문자열)을 반환(없으면 null).
+#[tauri::command]
+pub fn app_meta_load(app: tauri::AppHandle) -> CmdResult<Option<String>> {
+    use tauri::Manager;
+    let Ok(dir) = app.path().app_config_dir() else { return Ok(None) };
+    Ok(std::fs::read_to_string(dir.join("appmeta.json")).ok())
+}
+
+/// 컴파일된 앱 버전(Cargo 패키지 버전 = 릴리스 태그와 동기화).
+#[tauri::command]
+pub fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 // ─────────────────────────── 파일 IO (다운로드·체인 영속) ───────────────────────────
 
 /// 임의 텍스트 파일 쓰기(내보내기 다운로드·체인 저장 등). 상위 폴더 자동 생성.

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useStore } from "../store";
 import { useShallow } from "zustand/react/shallow";
 import { loadDeploy, saveDeploy, clearCreds, emptyDeploy, type DeploySettings } from "./deployConfig";
+import { loadMeta, saveMeta, defaultMeta, type AppMeta } from "../appMeta";
 
 export function Settings() {
   const { projectDir, showToast } = useStore(
@@ -12,6 +13,7 @@ export function Settings() {
   );
   const [cfg, setCfg] = useState<DeploySettings>(emptyDeploy());
   const [showSecret, setShowSecret] = useState(false);
+  const [meta, setMeta] = useState<AppMeta>(defaultMeta());
 
   // 프로젝트가 바뀌면 해당 프로젝트의 저장값 로드(암호화 파일에서 복호화).
   useEffect(() => {
@@ -20,8 +22,12 @@ export function Settings() {
     return () => { alive = false; };
   }, [projectDir]);
 
+  // 앱 메타(버전 + 업데이트 저장소)는 프로젝트와 무관 · 1회 로드.
+  useEffect(() => { let alive = true; loadMeta().then((m) => { if (alive) setMeta(m); }); return () => { alive = false; }; }, []);
+
   const set = (patch: Partial<DeploySettings>) => setCfg((c) => ({ ...c, ...patch }));
-  const save = async () => { await saveDeploy(projectDir, cfg); showToast("배포 설정 저장됨 ✓"); };
+  const setM = (patch: Partial<AppMeta>) => setMeta((m) => ({ ...m, ...patch }));
+  const save = async () => { await saveDeploy(projectDir, cfg); await saveMeta(meta); showToast("설정 저장됨 ✓"); };
   const clear = async () => { const next = await clearCreds(projectDir); setCfg(next); showToast("자격증명 삭제됨"); };
 
   const hasCreds = cfg.accessKeyId.trim() && cfg.secretAccessKey.trim();
@@ -108,6 +114,25 @@ export function Settings() {
             Role ARN 을 넣으면 위 Access Key 로 <code>sts:AssumeRole</code> 을 호출해 임시 자격증명을 받은 뒤
             그 권한으로 S3 업로드·CloudFront 무효화를 수행합니다(GitHub Actions의 role-to-assume 와 동일).
           </p>
+        </section>
+
+        <section className="settingsec">
+          <h3>⬆ 업데이트</h3>
+          <p className="hint tiny">
+            현재 버전 <b>v{meta.version}</b> (설치파일 빌드 시 릴리스 태그로 설정됨). 아래 GitHub 저장소의
+            <code> releases/latest</code> 태그와 비교해 업데이트 유무를 확인합니다. 저장소는 버전과 함께 로컬에 관리됩니다.
+          </p>
+          <div className="settinggrid">
+            <label>
+              GitHub Owner
+              <input value={meta.owner} onChange={(e) => setM({ owner: e.target.value.trim() })} placeholder="eedys1234" autoComplete="off" spellCheck={false} />
+            </label>
+            <label>
+              GitHub Repo
+              <input value={meta.repo} onChange={(e) => setM({ repo: e.target.value.trim() })} placeholder="plume" autoComplete="off" spellCheck={false} />
+            </label>
+          </div>
+          <p className="hint tiny" style={{ marginTop: 6 }}>확인 대상: <code>github.com/{meta.owner || "…"}/{meta.repo || "…"}/releases/latest</code></p>
         </section>
 
         <div className="settingbar">

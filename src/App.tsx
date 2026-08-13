@@ -4,7 +4,8 @@ import { pickDirectory } from "./dialog";
 import { LAST_FOLDER_KEY, PROJECT_ROOT_KEY, basename, emptySpec, tabKey, useStore, type BuilderTab, type Gnb } from "./store";
 import { useShallow } from "zustand/react/shallow";
 import { useStore as useZustandStore } from "zustand";
-import { checkForUpdate, needsUpdate, applyUpdate, CURRENT_VERSION, type UpdateCheck, type UpdateInfo } from "./update";
+import { checkForUpdate, needsUpdate, applyUpdate, resolveAppVersion, CURRENT_VERSION, type UpdateCheck, type UpdateInfo } from "./update";
+import { loadMeta, saveMeta } from "./appMeta";
 import { ErrorBoundary } from "./features/ErrorBoundary";
 import { Builder } from "./features/Builder";
 
@@ -88,6 +89,18 @@ export function App() {
   const [checking, setChecking] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [appVer, setAppVer] = useState(CURRENT_VERSION);
+
+  // 시작 시: 로컬 메타 로드 → 실제 설치 버전 조회 → 메타에 반영·저장(로컬 파일). 표시는 이 값 사용.
+  useEffect(() => {
+    (async () => {
+      const meta = await loadMeta();
+      setAppVer(meta.version); // 우선 파일 값(즉시)
+      const live = await resolveAppVersion(); // 실제 설치 버전
+      setAppVer(live);
+      if (live !== meta.version) await saveMeta({ ...meta, version: live });
+    })();
+  }, []);
 
   // 서버에서 업데이트 확인(서명 검증 포함). manual=true면 사용자가 직접 누른 것.
   async function runUpdateCheck(manual = false) {
@@ -425,7 +438,7 @@ export function App() {
           </button>
         ) : (
           <button className="verchip" title="업데이트 확인" onClick={() => runUpdateCheck(true)}>
-            {checking ? "확인 중…" : `v${CURRENT_VERSION}`}
+            {checking ? "확인 중…" : `v${appVer}`}
           </button>
         )}
         <button className="diagbadges" title="진단 로그 보기" onClick={() => setShowDiag((v) => !v)}>

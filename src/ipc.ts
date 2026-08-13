@@ -183,6 +183,9 @@ export const api = {
   deployCloudFront: (input: DeployInput) => invoke<string>("deploy_cloudfront", { input }),
   deployConfigLoad: (project: string) => invoke<string | null>("deploy_config_load", { project }),
   deployConfigSave: (project: string, json: string) => invoke<void>("deploy_config_save", { project, json }),
+  appVersion: () => invoke<string>("app_version"),
+  appMetaSave: (json: string) => invoke<void>("app_meta_save", { json }),
+  appMetaLoad: () => invoke<string | null>("app_meta_load"),
 
   // Git
   gitStatus: (dir: string) => invoke<GitStatus>("git_status", { dir }),
