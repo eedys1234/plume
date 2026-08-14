@@ -677,6 +677,23 @@ pub fn git_push_upstream(dir: String, remote: String, branch: String) -> CmdResu
     Ok(core::git::push_upstream(Path::new(&dir), &remote, &branch)?)
 }
 
+#[tauri::command]
+pub fn git_worktree_list(dir: String) -> CmdResult<Vec<core::git::Worktree>> {
+    Ok(core::git::worktree_list(Path::new(&dir))?)
+}
+#[tauri::command]
+pub fn git_worktree_add(dir: String, path: String, branch: String, new_branch: bool) -> CmdResult<String> {
+    Ok(core::git::worktree_add(Path::new(&dir), &path, &branch, new_branch)?)
+}
+#[tauri::command]
+pub fn git_worktree_remove(dir: String, path: String, force: bool) -> CmdResult<()> {
+    Ok(core::git::worktree_remove(Path::new(&dir), &path, force)?)
+}
+#[tauri::command]
+pub fn git_worktree_prune(dir: String) -> CmdResult<String> {
+    Ok(core::git::worktree_prune(Path::new(&dir))?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

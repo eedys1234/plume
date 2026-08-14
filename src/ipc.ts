@@ -90,6 +90,16 @@ export interface GitStatus {
   behind: number;
 }
 
+export interface GitWorktree {
+  path: string;
+  branch: string;
+  head: string;
+  isMain: boolean;
+  detached: boolean;
+  locked: boolean;
+  bare: boolean;
+}
+
 export interface LoadResult {
   total: number;
   success: number;
@@ -235,4 +245,10 @@ export const api = {
     invoke<void>("git_set_remote_url", { dir, name, url }),
   gitPushUpstream: (dir: string, remote: string, branch: string) =>
     invoke<string>("git_push_upstream", { dir, remote, branch }),
+  gitWorktreeList: (dir: string) => invoke<GitWorktree[]>("git_worktree_list", { dir }),
+  gitWorktreeAdd: (dir: string, path: string, branch: string, newBranch: boolean) =>
+    invoke<string>("git_worktree_add", { dir, path, branch, newBranch }),
+  gitWorktreeRemove: (dir: string, path: string, force: boolean) =>
+    invoke<void>("git_worktree_remove", { dir, path, force }),
+  gitWorktreePrune: (dir: string) => invoke<string>("git_worktree_prune", { dir }),
 };

@@ -403,6 +403,15 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 다른 폴더(git worktree 등)를 루트로 열어달라는 요청 처리(Git 패널 → 워크트리 열기).
+  const openRootReq = useStore((s) => s.openRootRequest);
+  useEffect(() => {
+    if (!openRootReq) return;
+    useStore.setState({ openRootRequest: null }); // 신호 소비
+    void openRoot(openRootReq);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRootReq]);
+
   return (
     <div className="app">
       <header className="toolbar">

@@ -129,6 +129,10 @@ pub fn run() {
             commands::git_remove_remote,
             commands::git_set_remote_url,
             commands::git_push_upstream,
+            commands::git_worktree_list,
+            commands::git_worktree_add,
+            commands::git_worktree_remove,
+            commands::git_worktree_prune,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 앱 실행 중 오류");

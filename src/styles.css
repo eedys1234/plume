@@ -972,6 +972,10 @@ details > summary:hover { color: var(--text); }
 .rinfo { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .rinfo b { font-size: 12px; }
 .rurl { font-size: 10px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wtbadge { font-size: 9px; font-weight: 700; padding: 0 5px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
+.wtbadge.main { background: var(--accent-soft); color: var(--accent-hover); }
+.wtbadge.lock { background: rgba(180,140,0,.2); color: #e0b64a; }
+.wtopt { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-dim); white-space: nowrap; }
 .chash { color: var(--accent); font-family: var(--mono); }
 .csub { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .githistory .sum { font-size: 11px; }

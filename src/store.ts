@@ -86,6 +86,8 @@ interface AppState {
   // 프로젝트 폴더(상위) 하위에 여러 워크스페이스(서브폴더)를 둔다.
   projectRoot: string | null;              // 한 번 선택하는 상위 폴더
   setProjectRoot: (d: string | null) => void;
+  openRootRequest: string | null;          // 다른 폴더(예: git worktree)를 루트로 열어달라는 요청 신호
+  requestOpenRoot: (path: string) => void;
   recentRoots: string[];                    // 최근 프로젝트 폴더
   addRecentRoot: (path: string) => void;
   removeRecentRoot: (path: string) => void;
@@ -238,6 +240,8 @@ export const useStore = create<AppState>()(
 
   projectRoot: projectRootInit(),
   setProjectRoot: (d) => set({ projectRoot: d }),
+  openRootRequest: null,
+  requestOpenRoot: (path) => set({ openRootRequest: path }),
   recentRoots: loadRecentRoots(),
   addRecentRoot: (path) =>
     set((s) => {

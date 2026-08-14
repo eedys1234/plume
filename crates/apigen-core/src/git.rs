@@ -313,6 +313,74 @@ pub fn push_upstream(root: &Path, remote: &str, branch: &str) -> Result<String> 
     run(root, &["push", "-u", remote, branch])
 }
 
+// ─────────────────────────── Worktree ───────────────────────────
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Worktree {
+    pub path: String,
+    pub branch: String, // refs/heads/ 제거된 브랜치명(detached면 "")
+    pub head: String,   // HEAD 커밋(짧게)
+    pub is_main: bool,  // 메인 워크트리(목록 첫 항목)
+    pub detached: bool,
+    pub locked: bool,
+    pub bare: bool,
+}
+
+/// `git worktree list --porcelain` 파싱.
+pub fn worktree_list(root: &Path) -> Result<Vec<Worktree>> {
+    let out = run(root, &["worktree", "list", "--porcelain"])?;
+    let mut list: Vec<Worktree> = vec![];
+    let mut cur: Option<Worktree> = None;
+    let push_cur = |cur: &mut Option<Worktree>, list: &mut Vec<Worktree>| {
+        if let Some(w) = cur.take() { list.push(w); }
+    };
+    for line in out.lines() {
+        if let Some(p) = line.strip_prefix("worktree ") {
+            push_cur(&mut cur, &mut list);
+            cur = Some(Worktree { path: p.to_string(), branch: String::new(), head: String::new(), is_main: false, detached: false, locked: false, bare: false });
+        } else if let Some(h) = line.strip_prefix("HEAD ") {
+            if let Some(w) = cur.as_mut() { w.head = h.chars().take(8).collect(); }
+        } else if let Some(b) = line.strip_prefix("branch ") {
+            if let Some(w) = cur.as_mut() { w.branch = b.strip_prefix("refs/heads/").unwrap_or(b).to_string(); }
+        } else if line == "detached" {
+            if let Some(w) = cur.as_mut() { w.detached = true; }
+        } else if line == "bare" {
+            if let Some(w) = cur.as_mut() { w.bare = true; }
+        } else if line == "locked" || line.starts_with("locked ") {
+            if let Some(w) = cur.as_mut() { w.locked = true; }
+        }
+    }
+    push_cur(&mut cur, &mut list);
+    if let Some(first) = list.first_mut() { first.is_main = true; }
+    Ok(list)
+}
+
+/// 워크트리 추가. new_branch=true면 `-b <branch>`로 새 브랜치 생성, 아니면 기존 브랜치 체크아웃.
+pub fn worktree_add(root: &Path, path: &str, branch: &str, new_branch: bool) -> Result<String> {
+    let mut args: Vec<&str> = vec!["worktree", "add"];
+    if new_branch && !branch.is_empty() {
+        args.extend_from_slice(&["-b", branch, path]);
+    } else {
+        args.push(path);
+        if !branch.is_empty() { args.push(branch); }
+    }
+    run(root, &args)
+}
+
+/// 워크트리 제거(등록 해제 + 폴더 삭제). force=true면 미커밋 변경 있어도 강제.
+pub fn worktree_remove(root: &Path, path: &str, force: bool) -> Result<()> {
+    let mut args: Vec<&str> = vec!["worktree", "remove"];
+    if force { args.push("--force"); }
+    args.push(path);
+    run(root, &args).map(|_| ())
+}
+
+/// 삭제된 폴더 등 끊긴 워크트리 등록 정리.
+pub fn worktree_prune(root: &Path) -> Result<String> {
+    run(root, &["worktree", "prune", "-v"])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,6 +390,34 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let st = status(dir.path()).unwrap();
         assert!(!st.is_repo);
+    }
+
+    #[test]
+    fn worktree_add_list_remove_flow() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        init(p).unwrap();
+        run(p, &["config", "user.email", "t@example.com"]).unwrap();
+        run(p, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(p.join("f.txt"), "x\n").unwrap();
+        stage(p, "f.txt").unwrap();
+        commit(p, "init").unwrap();
+
+        // 처음엔 메인 워크트리 1개.
+        let wts = worktree_list(p).unwrap();
+        assert_eq!(wts.len(), 1);
+        assert!(wts[0].is_main);
+
+        // 새 브랜치 워크트리 추가.
+        let wt = p.join("wt_feat");
+        worktree_add(p, wt.to_str().unwrap(), "feature", true).unwrap();
+        let wts2 = worktree_list(p).unwrap();
+        assert_eq!(wts2.len(), 2);
+        assert!(wts2.iter().any(|w| w.branch == "feature" && !w.is_main));
+
+        // 제거 후 다시 1개.
+        worktree_remove(p, wt.to_str().unwrap(), true).unwrap();
+        assert_eq!(worktree_list(p).unwrap().len(), 1);
     }
 
     #[test]

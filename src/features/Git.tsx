@@ -1,6 +1,6 @@
 // Git 탭 (Sourcetree 스타일): 브랜치 · 스테이지/언스테이지 분리 · 파일별 스테이징 · diff · 커밋 · 히스토리.
 import { useEffect, useState } from "react";
-import { api, type GitCommit, type GitFileStatus, type GitGraphCommit, type GitStatus } from "../ipc";
+import { api, type GitCommit, type GitFileStatus, type GitGraphCommit, type GitStatus, type GitWorktree } from "../ipc";
 import { useStore } from "../store";
 import { GitGraph } from "./GitGraph";
 import { Resizer, usePersistedSize } from "./Resizer";
@@ -10,6 +10,7 @@ const isUntracked = (f: GitFileStatus) => f.status === "??";
 export function Git() {
   // Git은 상단 "📁 폴더 열기"로 지정한 작업 폴더(projectDir)를 그대로 사용한다.
   const projectDir = useStore((s) => s.projectDir);
+  const requestOpenRoot = useStore((s) => s.requestOpenRoot);
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [log, setLog] = useState<GitCommit[]>([]);
   const [branches, setBranches] = useState<string[]>([]);
@@ -26,6 +27,10 @@ export function Git() {
   const [busy, setBusy] = useState(false);
   const [stashes, setStashes] = useState<{ index: number; message: string }[]>([]);
   const [stashMsg, setStashMsg] = useState("");
+  const [worktrees, setWorktrees] = useState<GitWorktree[]>([]);
+  const [wtPath, setWtPath] = useState("");
+  const [wtBranch, setWtBranch] = useState("");
+  const [wtNew, setWtNew] = useState(true);
   const [histH, setHistH] = usePersistedSize("plume:gitHistH", 175, 90, 600);
 
   async function refresh() {
@@ -39,6 +44,7 @@ export function Git() {
         setRemotes(await api.gitRemotes(projectDir));
         setGraphData(await api.gitGraphData(projectDir, 80));
         setStashes(await api.gitStashList(projectDir));
+        try { setWorktrees(await api.gitWorktreeList(projectDir)); } catch { setWorktrees([]); }
       }
     } catch (e: any) {
       setMsg(String(e?.message ?? e));
@@ -128,7 +134,44 @@ export function Git() {
       <div className="gitmain">
         {/* 원격 + 브랜치 패널 (Remotes를 위로 이동) */}
         <div className="gitbranches">
-          <h3>Stash</h3>
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <h3 style={{ margin: 0 }}>Worktree</h3>
+            <button className="mini" disabled={busy} title="끊긴 워크트리 정리" onClick={() => act(() => api.gitWorktreePrune(projectDir), "worktree prune")}>정리</button>
+          </div>
+          <ul className="gitfiles">
+            {worktrees.length === 0 && <li className="hint tiny">워크트리 없음</li>}
+            {worktrees.map((w) => (
+              <li key={w.path} className="remote">
+                <div className="rinfo">
+                  <b>
+                    {w.detached ? "(detached)" : (w.branch || "?")}
+                    {w.isMain && <span className="wtbadge main">main</span>}
+                    {w.locked && <span className="wtbadge lock">locked</span>}
+                  </b>
+                  <code className="rurl" title={w.path}>{w.path}{w.head ? ` · ${w.head}` : ""}</code>
+                </div>
+                <button className="mini" title="이 워크트리를 앱에서 열기" disabled={busy} onClick={() => requestOpenRoot(w.path)}>열기</button>
+                {!w.isMain && (
+                  <button className="del" title="워크트리 제거" disabled={busy}
+                    onClick={() => confirm(`워크트리 제거?\n${w.path}\n(폴더가 삭제됩니다)`) && act(() => api.gitWorktreeRemove(projectDir, w.path, true), "worktree remove")}>×</button>
+                )}
+              </li>
+            ))}
+          </ul>
+          <input value={wtPath} onChange={(e) => setWtPath(e.target.value)} placeholder="새 워크트리 경로 (예: ../plume-feature)" style={{ width: "100%", marginBottom: 4 }} />
+          <div className="row">
+            <input value={wtBranch} onChange={(e) => setWtBranch(e.target.value)} placeholder="브랜치명" style={{ flex: 1, minWidth: 0 }} />
+            <label className="wtopt" title="새 브랜치 생성(-b)"><input type="checkbox" checked={wtNew} onChange={(e) => setWtNew(e.target.checked)} /> 새로</label>
+            <button
+              disabled={busy || !wtPath.trim() || !wtBranch.trim()}
+              title="git worktree add"
+              onClick={() => act(() => api.gitWorktreeAdd(projectDir, wtPath.trim(), wtBranch.trim(), wtNew), "worktree add").then(() => { setWtPath(""); setWtBranch(""); })}
+            >
+              추가
+            </button>
+          </div>
+
+          <h3 style={{ marginTop: 14 }}>Stash</h3>
           <div className="row" style={{ marginBottom: 4 }}>
             <input
               value={stashMsg}
