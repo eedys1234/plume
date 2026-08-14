@@ -6,6 +6,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useStore as useZustandStore } from "zustand";
 import { checkForUpdate, needsUpdate, applyUpdate, resolveAppVersion, CURRENT_VERSION, type UpdateCheck, type UpdateInfo } from "./update";
 import { loadMeta, saveMeta } from "./appMeta";
+import { eventToCombo, commandForEvent, COMMANDS, effectiveCombo, comboTokens, IS_MAC } from "./keybindings";
 import { ErrorBoundary } from "./features/ErrorBoundary";
 import { Builder } from "./features/Builder";
 
@@ -178,70 +179,60 @@ export function App() {
     return () => { unsub(); if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
   }, [saveWorkspace]);
 
-  // Ctrl+S: 워크스페이스의 모든 컬렉션 + 환경 + 체인 저장.
+  // 단축키 디스패처: keybindings 레지스트리(사용자 커스터마이징 반영)로 command 매핑 후 실행.
   useEffect(() => {
+    // command 실행.
+    const run = (id: string) => {
+      const st = useStore.getState();
+      const t = () => (useStore as any).temporal.getState();
+      switch (id) {
+        case "nav.builder": st.setGnb("builder"); break;
+        case "nav.env": st.setGnb("environment"); break;
+        case "nav.git": st.setGnb("git"); break;
+        case "nav.history": st.setGnb("history"); break;
+        case "nav.settings": st.setGnb("settings"); break;
+        case "sub.design": st.setGnb("builder"); st.setBuilderTab("design"); break;
+        case "sub.call": st.setGnb("builder"); st.setBuilderTab("call"); break;
+        case "sub.load": st.setGnb("builder"); st.setBuilderTab("load"); break;
+        case "sub.docs": st.setGnb("builder"); st.setBuilderTab("docs"); break;
+        case "save": void saveWorkspace(false); break;
+        case "undo": t().undo(); void st.revalidate(); break;
+        case "redo": t().redo(); void st.revalidate(); break;
+        case "tab.next":
+        case "tab.prev": {
+          if (st.openTabs.length > 1) {
+            const keys = st.openTabs.map((tb) => tabKey(tb.path, tb.method));
+            const idx = Math.max(0, keys.indexOf(st.activeTab ?? ""));
+            const n = id === "tab.prev" ? (idx - 1 + keys.length) % keys.length : (idx + 1) % keys.length;
+            st.setActiveTab(keys[n]);
+          }
+          break;
+        }
+        case "tab.close": {
+          const a = st.openTabs.find((tb) => tabKey(tb.path, tb.method) === st.activeTab);
+          if (a) st.closeTab(a.path, a.method);
+          break;
+        }
+        case "help": setShowShortcuts((v) => !v); break;
+      }
+    };
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
-        e.preventDefault();
-        void saveWorkspace(false);
-      }
-      // 요청 탭 전환/닫기: Ctrl+Tab=다음, Ctrl+Shift+Tab=이전, Ctrl+W=현재 탭 닫기.
-      if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
-        const st = useStore.getState();
-        if (st.openTabs.length > 1) {
-          e.preventDefault();
-          const keys = st.openTabs.map((t) => tabKey(t.path, t.method));
-          const idx = Math.max(0, keys.indexOf(st.activeTab ?? ""));
-          const n = e.shiftKey ? (idx - 1 + keys.length) % keys.length : (idx + 1) % keys.length;
-          st.setActiveTab(keys[n]);
-        }
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === "w" || e.key === "W")) {
-        const st = useStore.getState();
-        const active = st.openTabs.find((t) => tabKey(t.path, t.method) === st.activeTab);
-        if (active) { e.preventDefault(); st.closeTab(active.path, active.method); }
-        return;
-      }
-      // 화면 이동: Ctrl+1..5 = Nav / Ctrl+Shift+1..4 = Builder 하위탭. (code로 레이아웃 무관)
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && /^Digit[1-5]$/.test(e.code)) {
-        e.preventDefault();
-        const n = Number(e.code.slice(5));
-        const st = useStore.getState();
-        if (e.shiftKey) {
-          const subs: BuilderTab[] = ["design", "call", "load", "docs"];
-          if (n <= 4) { st.setGnb("builder"); st.setBuilderTab(subs[n - 1]); }
-        } else {
-          const navs: Gnb[] = ["builder", "environment", "git", "history", "settings"];
-          st.setGnb(navs[n - 1]);
-        }
-        return;
-      }
-      // 단축키 도움말: ? (입력 중이 아닐 때). F1 도 허용.
+      // Esc: 단축키 도움말 닫기(다른 Esc 동작 방해 않도록 preventDefault 안 함).
+      if (e.key === "Escape") { setShowShortcuts((v) => (v ? false : v)); return; }
+      const combo = eventToCombo(e);
+      if (!combo) return;
+      const id = commandForEvent(e);
+      if (!id || id === "request.send") return; // request.send 는 RequestView 담당
+      // 모디파이어 없는 단축키(F1 등)는 입력 중 무시.
       const ae = document.activeElement as HTMLElement | null;
       const typing = !!ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
-      if (!typing && (e.key === "?" || e.key === "F1")) {
-        e.preventDefault();
-        setShowShortcuts((v) => !v);
-        return;
-      }
-      if (e.key === "Escape" && showShortcuts) { setShowShortcuts(false); return; }
-      // Ctrl+Z 되돌리기 / Ctrl+Shift+Z·Ctrl+Y 다시하기 (스펙·DnD·컬렉션·환경 전부).
-      const z = e.key.toLowerCase() === "z";
-      const y = e.key.toLowerCase() === "y";
-      if ((e.ctrlKey || e.metaKey) && z && !e.shiftKey) {
-        e.preventDefault();
-        (useStore as any).temporal.getState().undo();
-        void useStore.getState().revalidate();
-      } else if ((e.ctrlKey || e.metaKey) && ((z && e.shiftKey) || y)) {
-        e.preventDefault();
-        (useStore as any).temporal.getState().redo();
-        void useStore.getState().revalidate();
-      }
+      if (typing && !combo.mod && !combo.ctrl && !combo.alt) return;
+      e.preventDefault();
+      run(id);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [saveWorkspace, showShortcuts]);
+  }, [saveWorkspace]);
 
   const errors = diagnostics.filter((d) => d.severity === "error").length;
   const warns = diagnostics.filter((d) => d.severity === "warning").length;
@@ -651,117 +642,67 @@ function UpdateModal({ info, mock, updating, progress, onClose, onUpdate }: {
 }
 
 // 단축키 도움말 모달 — 화면별로 구성. item: [keys, desc, "key"|"mouse"].
-type ScItem = [string, string, ("key" | "mouse")?];
-const SHORTCUT_GROUPS: { title: string; hint?: string; items: ScItem[] }[] = [
-  {
-    title: "전역 · 모든 화면",
-    items: [
-      ["Ctrl+1", "Builder 로 이동"],
-      ["Ctrl+2", "Env(환경변수) 로 이동"],
-      ["Ctrl+3", "Git 으로 이동"],
-      ["Ctrl+4", "History 로 이동"],
-      ["Ctrl+5", "Settings 로 이동"],
-      ["Ctrl+S", "워크스페이스 저장 (변경 시 2초 뒤 자동 저장도 됨)"],
-      ["? / F1", "이 단축키 창 열기 · 닫기"],
-      ["Esc", "열린 창 · 메뉴 닫기"],
-    ],
-  },
-  {
-    title: "Builder · 하위 탭",
-    items: [
-      ["Ctrl+Shift+1", "Design (요청 트리·편집)"],
-      ["Ctrl+Shift+2", "API Call Chain"],
-      ["Ctrl+Shift+3", "Run (부하 실행)"],
-      ["Ctrl+Shift+4", "Specification (문서)"],
-    ],
-  },
-  {
-    title: "요청 탭 전환 · 닫기",
-    items: [
-      ["Ctrl+Tab", "다음 요청 탭으로 이동 (A → B)"],
-      ["Ctrl+Shift+Tab", "이전 요청 탭으로 이동 (B → A)"],
-      ["Ctrl+W", "현재 요청 탭 닫기"],
-      ["우클릭", "탭 메뉴: 닫기 · 왼쪽/오른쪽 닫기 · 다른 탭 닫기 · 복제", "mouse"],
-      ["‹  ›", "탭이 넘칠 때 좌우 스크롤 버튼", "mouse"],
-    ],
-  },
-  {
-    title: "요청 편집 · 실행",
-    items: [
-      ["Ctrl+Enter", "현재 요청 실행 (Send)"],
-      ["Enter", "URL 바에서 경로 · 변수 반영", "key"],
-      ["Ctrl+Z", "되돌리기 (편집 · 드래그 · 컬렉션/폴더 조작)"],
-      ["Ctrl+Shift+Z / Ctrl+Y", "다시하기"],
-      ["클릭", "URL의 {{변수}} → 값 편집 · 다른 환경변수 선택", "mouse"],
-    ],
-  },
-  {
-    title: "트리 (컬렉션 · 폴더 · 요청)",
-    items: [
-      ["클릭", "요청 열기 · 폴더 접기/펼치기", "mouse"],
-      ["우클릭", "새 폴더 · 새 요청 · 이름변경 · 복사 · 삭제 · 스크립트", "mouse"],
-      ["드래그", "요청을 다른 폴더 · 컬렉션으로 이동", "mouse"],
-      ["정렬", "기준(경로/이름/폴더명/메서드) + 오름/내림 아이콘", "mouse"],
-    ],
-  },
-  {
-    title: "Specification · Settings",
-    items: [
-      ["버튼", "Specification: 단일 HTML · GitHub Pages · CloudFront 배포", "mouse"],
-      ["버튼", "Settings: AWS 자격증명 · 배포 설정 (암호화 저장)", "mouse"],
-    ],
-  },
+// 마우스 제스처(정적 · 커스터마이즈 대상 아님).
+const MOUSE_GROUPS: { title: string; items: [string, string][] }[] = [
+  { title: "트리 (마우스)", items: [
+    ["클릭", "요청 열기 · 폴더 접기/펼치기"],
+    ["우클릭", "새 폴더·요청 · 이름변경 · 복사 · 삭제 · 스크립트"],
+    ["드래그", "요청을 다른 폴더·컬렉션으로 이동"],
+  ] },
+  { title: "요청 탭 · URL (마우스)", items: [
+    ["우클릭(탭)", "닫기 · 왼/오른쪽 닫기 · 다른 탭 닫기 · 복제"],
+    ["클릭({{변수}})", "값 편집 · 다른 환경변수 선택"],
+  ] },
 ];
 
-const hangul = /[가-힣]/;
-const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform || navigator.userAgent || "");
-// Mac 표기: Ctrl→⌘, Shift→⇧. 단 Tab 전환/닫기는 macOS에서 Cmd가 OS 예약(앱 전환·창 닫기)이라 Control(⌃) 사용.
-function macLabel(tok: string, ctrlIsControl: boolean): string {
-  if (!IS_MAC) return tok;
-  return tok.replace(/Ctrl/g, ctrlIsControl ? "⌃" : "⌘").replace(/Shift/g, "⇧");
-}
-function ScKeys({ keys, mouse }: { keys: string; mouse?: boolean }) {
-  const ctrlIsControl = /Tab|Ctrl\+W/.test(keys); // macOS에서 Control 유지할 조합
-  return (
-    <>
-      {keys.split(/\s+/).map((k, i) => {
-        if (k === "/" || k === "~" || k === "·") return <span key={i} className="scsep">{k}</span>;
-        if (mouse || hangul.test(k)) return <span key={i} className="scmouse">{k}</span>;
-        return <kbd key={i}>{macLabel(k, ctrlIsControl)}</kbd>;
-      })}
-    </>
-  );
+function KbdCombo({ combo }: { combo: string }) {
+  if (!combo) return <span className="scmouse">없음</span>;
+  return <>{comboTokens(combo).map((t, i) => <kbd key={i}>{t}</kbd>)}</>;
 }
 
 function ShortcutsModal({ onClose }: { onClose: () => void }) {
+  const setGnb = useStore((s) => s.setGnb);
+  const cats: string[] = [];
+  for (const c of COMMANDS) if (!cats.includes(c.cat)) cats.push(c.cat);
   return (
     <div className="modalbg" onClick={onClose}>
       <div className="modal shortcutsmodal" onClick={(e) => e.stopPropagation()}>
         <div className="iomodalhead">
-          <h3>⌨ 단축키 · 화면별 안내</h3>
+          <h3>⌨ 단축키</h3>
           <button onClick={onClose}>닫기</button>
         </div>
         <div className="shortcutsbody">
-          {SHORTCUT_GROUPS.map((g) => (
-            <div key={g.title} className="scgroup">
-              <div className="scgrouptitle">{g.title}</div>
+          {cats.map((cat) => (
+            <div key={cat} className="scgroup">
+              <div className="scgrouptitle">{cat}</div>
               <table className="sctable">
                 <tbody>
-                  {g.items.map(([keys, desc, kind], i) => (
-                    <tr key={i}>
-                      <td className="sckeys"><ScKeys keys={keys} mouse={kind === "mouse"} /></td>
-                      <td className="scdesc">{desc}</td>
+                  {COMMANDS.filter((c) => c.cat === cat).map((c) => (
+                    <tr key={c.id}>
+                      <td className="sckeys"><KbdCombo combo={effectiveCombo(c.id)} /></td>
+                      <td className="scdesc">{c.label}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ))}
+          {MOUSE_GROUPS.map((g) => (
+            <div key={g.title} className="scgroup">
+              <div className="scgrouptitle">{g.title}</div>
+              <table className="sctable">
+                <tbody>
+                  {g.items.map(([k, d], i) => (
+                    <tr key={i}><td className="sckeys"><span className="scmouse">{k}</span></td><td className="scdesc">{d}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
         </div>
-        <p className="hint tiny" style={{ margin: "6px 16px 12px" }}>
-          {IS_MAC
-            ? "⌘ = Command · ⇧ = Shift · ⌃ = Control. 요청 탭 전환(Tab)·닫기(W)는 ⌃(Control) 을 사용하세요(⌘Tab·⌘W는 macOS 예약)."
-            : "macOS에서는 Ctrl 대신 ⌘(Cmd) 를 사용합니다(탭 전환·닫기는 Control)."}
+        <p className="hint tiny" style={{ margin: "6px 16px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+          <button className="minibtn" onClick={() => { setGnb("settings"); onClose(); }}>단축키 변경 →</button>
+          <span>Settings ▸ 단축키 에서 커스터마이징. {IS_MAC ? "⌘=Command · ⇧=Shift · ⌃=Control" : ""}</span>
         </p>
       </div>
     </div>

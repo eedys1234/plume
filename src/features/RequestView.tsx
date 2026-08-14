@@ -5,6 +5,7 @@ import { api, type AuthSpec, type HttpRequestSpec, type HttpResponse } from "../
 import { useStore } from "../store";
 import { useShallow } from "zustand/react/shallow";
 import { runScript, runTests, type BruApi, type TestResult } from "../script";
+import { isCommand } from "../keybindings";
 import { SchemaEditor } from "./SchemaEditor";
 import { ParamsEditor } from "./ParamsEditor";
 import { ExamplesEditor } from "./ExamplesEditor";
@@ -283,7 +284,7 @@ export function RequestView({ path, method }: { path: string; method: string }) 
   busyRef.current = busy;
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !busyRef.current) {
+      if (isCommand(e, "request.send") && !busyRef.current) {
         e.preventDefault();
         sendRef.current();
       }

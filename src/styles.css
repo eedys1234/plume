@@ -549,6 +549,18 @@ button.active.danger:hover { background: #b0311f; }
 .settingbar button.danger { border-color: var(--danger, #c0392b); color: var(--danger, #c0392b); background: transparent; }
 .settingbar button.danger:hover { background: var(--danger, #c0392b); color: #fff; }
 
+/* 단축키 커스터마이징 */
+.kbcat { margin-top: 10px; }
+.kbcattitle { font-size: 11px; font-weight: 700; color: var(--accent-hover, var(--accent)); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 4px; }
+.kbrow { display: flex; align-items: center; gap: 8px; padding: 5px 2px; border-bottom: 1px solid var(--line); }
+.kbrow .kblabel { flex: 1; min-width: 0; font-size: 12.5px; }
+.kbrow .kbcombo { flex: none; display: flex; align-items: center; gap: 4px; min-width: 150px; justify-content: flex-end; }
+.kbrow .kbrec { font-size: 11.5px; color: var(--accent-hover); background: var(--accent-soft); border-radius: 5px; padding: 2px 8px; }
+.kbrow .kbconflict { font-size: 9.5px; font-weight: 700; color: #fff; background: var(--danger, #c0392b); border-radius: 999px; padding: 1px 6px; }
+.kbrow .kbbtn { flex: none; padding: 3px 9px; font-size: 11.5px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
+.kbrow .kbbtn:hover { background: var(--accent-weak, var(--line)); }
+.kbrow .kbbtn.ghost { color: var(--text-dim); }
+
 /* varpop: 환경변수 선택 리스트 */
 .varpick { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
 .varpicklabel { font-size: 11px; color: var(--text-dim); margin: 0 2px 6px; }

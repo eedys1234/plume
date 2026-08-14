@@ -6,6 +6,7 @@ import { useStore } from "../store";
 import { useShallow } from "zustand/react/shallow";
 import { loadDeploy, saveDeploy, clearCreds, emptyDeploy, type DeploySettings } from "./deployConfig";
 import { loadMeta, saveMeta, defaultMeta, type AppMeta } from "../appMeta";
+import { COMMANDS, effectiveCombo, comboTokens, setBinding, resetBinding, resetAll, eventToCombo, comboToString } from "../keybindings";
 
 export function Settings() {
   const { projectDir, showToast } = useStore(
@@ -14,6 +15,24 @@ export function Settings() {
   const [cfg, setCfg] = useState<DeploySettings>(emptyDeploy());
   const [showSecret, setShowSecret] = useState(false);
   const [meta, setMeta] = useState<AppMeta>(defaultMeta());
+  const [recId, setRecId] = useState<string | null>(null); // 녹화 중인 command id
+  const [bindVer, setBindVer] = useState(0); // 바인딩 변경 후 재렌더용
+
+  // 녹화: recId 설정되면 다음 키 입력을 캡처해 바인딩. Esc=취소.
+  useEffect(() => {
+    if (!recId) return;
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault(); e.stopPropagation();
+      if (e.key === "Escape") { setRecId(null); return; }
+      const c = eventToCombo(e);
+      if (!c) return; // 모디파이어 단독은 대기
+      setBinding(recId, comboToString(c));
+      setRecId(null);
+      setBindVer((v) => v + 1);
+    };
+    window.addEventListener("keydown", onKey, true); // capture: 전역 디스패처보다 먼저
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [recId]);
 
   // 프로젝트가 바뀌면 해당 프로젝트의 저장값 로드(암호화 파일에서 복호화).
   useEffect(() => {
@@ -133,6 +152,47 @@ export function Settings() {
             </label>
           </div>
           <p className="hint tiny" style={{ marginTop: 6 }}>확인 대상: <code>github.com/{meta.owner || "…"}/{meta.repo || "…"}/releases/latest</code></p>
+        </section>
+
+        <section className="settingsec">
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+            <h3 style={{ margin: 0 }}>⌨ 단축키</h3>
+            <button className="secrettoggle" onClick={() => { resetAll(); setBindVer((v) => v + 1); showToast("단축키 기본값으로"); }}>전체 기본값</button>
+          </div>
+          <p className="hint tiny">
+            '변경'을 누르고 원하는 키 조합을 누르세요(Esc=취소). <b>Mod</b> = Windows/Linux는 Ctrl, macOS는 ⌘.
+            같은 조합이 겹치면 위 목록에서 먼저 나오는 항목이 우선합니다.
+          </p>
+          {(() => {
+            // 조합 충돌 집계.
+            const counts: Record<string, number> = {};
+            for (const c of COMMANDS) { const k = effectiveCombo(c.id); counts[k] = (counts[k] ?? 0) + 1; }
+            const cats: string[] = [];
+            for (const c of COMMANDS) if (!cats.includes(c.cat)) cats.push(c.cat);
+            void bindVer; // 재렌더 트리거 참조
+            return cats.map((cat) => (
+              <div key={cat} className="kbcat">
+                <div className="kbcattitle">{cat}</div>
+                {COMMANDS.filter((c) => c.cat === cat).map((c) => {
+                  const combo = effectiveCombo(c.id);
+                  const conflict = counts[combo] > 1;
+                  const rec = recId === c.id;
+                  return (
+                    <div key={c.id} className="kbrow">
+                      <span className="kblabel">{c.label}</span>
+                      <span className="kbcombo">
+                        {rec ? <span className="kbrec">키를 누르세요…</span>
+                          : comboTokens(combo).map((t, i) => <kbd key={i}>{t}</kbd>)}
+                        {conflict && !rec && <span className="kbconflict" title="다른 항목과 조합이 겹칩니다">충돌</span>}
+                      </span>
+                      <button className="kbbtn" onClick={() => setRecId(rec ? null : c.id)}>{rec ? "취소" : "변경"}</button>
+                      <button className="kbbtn ghost" title="기본값으로" onClick={() => { resetBinding(c.id); setBindVer((v) => v + 1); }}>기본</button>
+                    </div>
+                  );
+                })}
+              </div>
+            ));
+          })()}
         </section>
 
         <div className="settingbar">
