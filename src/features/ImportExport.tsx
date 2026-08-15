@@ -49,6 +49,7 @@ export function ImportPanel() {
       collections: s.collections, projectDir: s.projectDir, logEvent: s.logEvent, environments: s.environments, setEnvironments: s.setEnvironments,
     }))
   );
+  const showAlert = useStore((s) => s.showAlert);
   const [fmt, setFmt] = useState<ImportFmt>("openapi-yaml");
   const [text, setText] = useState("");
   const [alsoBru, setAlsoBru] = useState(false);
@@ -83,7 +84,7 @@ export function ImportPanel() {
       setMsg("✓ 분석 완료 — 오른쪽 결과 확인 후 가져오기");
     } catch (e: any) {
       setPending(null);
-      setMsg(`파싱 오류: ${e?.message ?? e}`);
+      showAlert(`${e?.message ?? e}`, { title: "가져오기 파싱 오류", kind: "err" });
     }
   }
 
@@ -97,7 +98,7 @@ export function ImportPanel() {
       setPending({ spec, envs: envs ?? [], stats: st });
       setMsg("✓ Bruno 컬렉션 분석 완료 — 오른쪽 결과 확인 후 가져오기");
     } catch (e: any) {
-      setMsg(`Bruno 가져오기 실패: ${e?.message ?? e}`);
+      showAlert(`${e?.message ?? e}`, { title: "Bruno 가져오기 실패", kind: "err" });
     }
   }
 
@@ -200,6 +201,7 @@ export function ExportPanel() {
       collections: s.collections, activeCollectionId: s.activeCollectionId, projectDir: s.projectDir, logEvent: s.logEvent,
     }))
   );
+  const showAlert = useStore((s) => s.showAlert);
   const [colId, setColId] = useState<string>(activeCollectionId);
   const [preview, setPreview] = useState("");
   const [msg, setMsg] = useState("");
@@ -223,7 +225,7 @@ export function ExportPanel() {
       setMsg(`✓ OpenAPI ${kind.toUpperCase()} 저장: ${dest}`);
       logEvent("Export", `openapi.${kind} · ${dest}`);
     } catch (e: any) {
-      setMsg(`오류: ${e?.message ?? e}`);
+      showAlert(`${e?.message ?? e}`, { title: "내보내기 실패", kind: "err" });
     }
   }
 
@@ -238,7 +240,7 @@ export function ExportPanel() {
       setMsg(`✓ Postman 컬렉션 저장: ${dest}`);
       logEvent("Export", `postman · ${dest}`);
     } catch (e: any) {
-      setMsg(`오류: ${e?.message ?? e}`);
+      showAlert(`${e?.message ?? e}`, { title: "내보내기 실패", kind: "err" });
     }
   }
 
@@ -250,7 +252,7 @@ export function ExportPanel() {
       setMsg(`✓ Bruno(.bru) 컬렉션 생성: ${p}`);
       logEvent("Export", `.bru 컬렉션 · ${p}`);
     } catch (e: any) {
-      setMsg(`오류: ${e?.message ?? e}`);
+      showAlert(`${e?.message ?? e}`, { title: "내보내기 실패", kind: "err" });
     }
   }
 
@@ -263,7 +265,7 @@ export function ExportPanel() {
       setMsg(`✓ Redoc HTML 저장: ${p}`);
       logEvent("Export", `Redoc HTML · ${p}`);
     } catch (e: any) {
-      setMsg(`오류: ${e?.message ?? e}`);
+      showAlert(`${e?.message ?? e}`, { title: "내보내기 실패", kind: "err" });
     }
   }
 

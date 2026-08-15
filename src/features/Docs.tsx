@@ -187,7 +187,7 @@ export function Docs() {
       const path = await api.exportStandaloneHtml(dest, docSpec, viewer);
       setMsg(`저장됨(${viewer}): ${path} — 더블클릭하면 인터넷 없이 열립니다`);
     } catch (e: any) {
-      setMsg(`오류: ${e?.message ?? e}`);
+      showAlert(`${e?.message ?? e}`, { title: "단일 HTML 내보내기 실패", kind: "err" });
     } finally {
       setBusy("");
     }
@@ -218,9 +218,11 @@ export function Docs() {
     setMsg(`${viewer} 배포 중… (docs 생성 → 커밋 → 푸시)`);
     try {
       const log = await api.publishGithubPages(projectDir, docSpec, `docs: update ${viewer} API docs`, viewer);
-      setMsg(log);
+      setMsg("");
+      showAlert(log, { title: "GitHub Pages 배포 완료", kind: "ok" });
     } catch (e: any) {
-      setMsg(`배포 실패: ${e?.message ?? e}`);
+      setMsg("");
+      showAlert(`${e?.message ?? e}`, { title: "GitHub Pages 배포 실패", kind: "err" });
     } finally {
       setBusy("");
     }

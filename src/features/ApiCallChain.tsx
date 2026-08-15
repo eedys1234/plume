@@ -54,6 +54,7 @@ export function ApiCallChain() {
     }))
   );
   const activeEnv = () => environments.find((e) => e.id === activeEnvId);
+  const showAlert = useStore((s) => s.showAlert);
   const [activeId, setActiveId] = useState<string>(chains[0]?.id ?? "");
   const [svg, setSvg] = useState("");
   const [msg, setMsg] = useState("");
@@ -199,7 +200,7 @@ export function ApiCallChain() {
       await api.writeTextFile(chainsPath, JSON.stringify(chains, null, 2));
       setMsg("✓ 체인 저장: .apigen/chains.json");
       logEvent("Chain", `체인 저장 (${chains.length}개)`);
-    } catch (e: any) { setMsg(`저장 실패: ${e?.message ?? e}`); }
+    } catch (e: any) { showAlert(`${e?.message ?? e}`, { title: "체인 저장 실패", kind: "err" }); }
   }
 
   async function downloadMermaid() {
@@ -245,7 +246,7 @@ export function ApiCallChain() {
       await api.writeBytesFile(dest, bytes);
       setMsg(`✓ PNG 저장: ${dest}`);
       logEvent("Export", `체인 다이어그램 PNG · ${dest}`);
-    } catch (e: any) { setMsg(`PNG 실패: ${e?.message ?? e}`); }
+    } catch (e: any) { showAlert(`${e?.message ?? e}`, { title: "PNG 내보내기 실패", kind: "err" }); }
   }
 
   return (

@@ -507,7 +507,7 @@ export function RequestView({ path, method }: { path: string; method: string }) 
       await api.writeBytesFile(dest, bytes);
       setMsg(`저장됨: ${dest}`);
     } catch (e: any) {
-      setMsg(`저장 실패: ${e?.message ?? e}`);
+      useStore.getState().showAlert(`${e?.message ?? e}`, { title: "응답 저장 실패", kind: "err" });
     }
   }
 

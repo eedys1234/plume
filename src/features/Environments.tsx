@@ -19,6 +19,7 @@ export function Environments() {
       projectDir: s.projectDir, persistClient: s.persistClient,
     }))
   );
+  const showAlert = useStore((s) => s.showAlert);
   const env = environments.find((e) => e.id === activeEnvId);
   const [nk, setNk] = useState("");
   const [nv, setNv] = useState("");
@@ -35,7 +36,7 @@ export function Environments() {
       await persistClient(projectDir);
       setMsg("environments/ 에 저장됨 ✓");
     } catch (e: any) {
-      setMsg(`오류: ${e?.message ?? e}`);
+      showAlert(`${e?.message ?? e}`, { title: "환경 저장 실패", kind: "err" });
     }
   }
 
@@ -59,7 +60,7 @@ export function Environments() {
       if (projectDir) { try { await persistClient(projectDir); } catch { /* 저장 실패 무시 */ } }
       setMsg(`✓ 환경 가져옴: ${env.name} (${Object.keys(env.variables).length} vars · ${isJson ? "Postman" : "Bruno"})`);
     } catch (e: any) {
-      setMsg(`가져오기 실패: ${e?.message ?? e}`);
+      showAlert(`${e?.message ?? e}`, { title: "환경 가져오기 실패", kind: "err" });
     }
   }
 

@@ -11,6 +11,7 @@ export function Git() {
   // Git은 상단 "📁 폴더 열기"로 지정한 작업 폴더(projectDir)를 그대로 사용한다.
   const projectDir = useStore((s) => s.projectDir);
   const requestOpenRoot = useStore((s) => s.requestOpenRoot);
+  const showAlert = useStore((s) => s.showAlert);
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [log, setLog] = useState<GitCommit[]>([]);
   const [branches, setBranches] = useState<string[]>([]);
@@ -73,7 +74,7 @@ export function Git() {
         setDiff("");
       }
     } catch (e: any) {
-      setMsg(`${label} 오류: ${e?.message ?? e}`);
+      showAlert(`${e?.message ?? e}`, { title: `Git 오류 · ${label}`, kind: "err" });
     } finally {
       setBusy(false);
     }

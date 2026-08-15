@@ -21,6 +21,7 @@ export function Load() {
   const { activeEnv, spec, logEvent } = useStore(
     useShallow((s) => ({ activeEnv: s.activeEnv, spec: s.spec, logEvent: s.logEvent }))
   );
+  const showAlert = useStore((s) => s.showAlert);
   const [mode, setMode] = useState<"single" | "folder" | "custom">("single");
   const [folder, setFolder] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -92,7 +93,7 @@ export function Load() {
       setResult(r);
       logEvent("Run", `부하 ${mode} · ${reqs.length}요청×${iter} · ${r.rps.toFixed(0)}rps · 성공 ${r.success}/${r.total}`);
     } catch (e: any) {
-      setMsg(`오류: ${e?.message ?? e}`);
+      showAlert(`${e?.message ?? e}`, { title: "실행 실패", kind: "err" });
     } finally {
       setBusy(false);
     }
