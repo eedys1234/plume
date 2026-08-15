@@ -17,6 +17,7 @@ export function Settings() {
   const [meta, setMeta] = useState<AppMeta>(defaultMeta());
   const [recId, setRecId] = useState<string | null>(null); // 녹화 중인 command id
   const [bindVer, setBindVer] = useState(0); // 바인딩 변경 후 재렌더용
+  const [tab, setTab] = useState<"cf" | "aws" | "update" | "keys">("cf");
 
   // 녹화: recId 설정되면 다음 키 입력을 캡처해 바인딩. Esc=취소.
   useEffect(() => {
@@ -56,6 +57,13 @@ export function Settings() {
       <div className="settingsinner">
         <h2>⚙ Settings</h2>
 
+        <div className="settingtabs">
+          {([["cf", "☁ CloudFront"], ["aws", "🔑 자격증명"], ["update", "⬆ 업데이트"], ["keys", "⌨ 단축키"]] as const).map(([id, label]) => (
+            <button key={id} className={tab === id ? "stab active" : "stab"} onClick={() => setTab(id)}>{label}</button>
+          ))}
+        </div>
+
+        {tab === "cf" && (
         <section className="settingsec">
           <h3>☁ CloudFront 배포</h3>
           <p className="hint tiny">
@@ -94,7 +102,9 @@ export function Settings() {
             </label>
           </div>
         </section>
+        )}
 
+        {tab === "aws" && (
         <section className="settingsec">
           <h3>🔑 AWS 자격증명</h3>
           <p className="hint tiny">
@@ -134,7 +144,9 @@ export function Settings() {
             그 권한으로 S3 업로드·CloudFront 무효화를 수행합니다(GitHub Actions의 role-to-assume 와 동일).
           </p>
         </section>
+        )}
 
+        {tab === "update" && (
         <section className="settingsec">
           <h3>⬆ 업데이트</h3>
           <p className="hint tiny">
@@ -153,7 +165,9 @@ export function Settings() {
           </div>
           <p className="hint tiny" style={{ marginTop: 6 }}>확인 대상: <code>github.com/{meta.owner || "…"}/{meta.repo || "…"}/releases/latest</code></p>
         </section>
+        )}
 
+        {tab === "keys" && (
         <section className="settingsec">
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
             <h3 style={{ margin: 0 }}>⌨ 단축키</h3>
@@ -193,8 +207,11 @@ export function Settings() {
               </div>
             ));
           })()}
+          <p className="hint tiny" style={{ marginTop: 8 }}>단축키는 변경 즉시 적용·저장됩니다(아래 '설정 저장'과 무관).</p>
         </section>
+        )}
 
+        {tab !== "keys" && (
         <div className="settingbar">
           <button className="active" onClick={save}>설정 저장</button>
           {hasCreds && <button className="danger" onClick={clear}>자격증명 삭제</button>}
@@ -203,6 +220,7 @@ export function Settings() {
             {projectDir ? `프로젝트: ${projectDir}` : "워크스페이스 미선택 — 기본 프로필에 저장"}
           </span>
         </div>
+        )}
       </div>
     </div>
   );
