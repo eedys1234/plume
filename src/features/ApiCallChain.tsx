@@ -82,7 +82,13 @@ export function ApiCallChain() {
   }, [mermaidSrc]);
 
   function updateChain(fn: (c: Chain) => void) {
-    setChains(chains.map((c) => { if (c.id !== activeId) return c; const n = structuredClone(c); fn(n); return n; }));
+    // 매 키입력마다 체인 전체를 structuredClone 하지 않고, 체인 + steps만 얕게 복사(steps는 평면 객체).
+    setChains(chains.map((c) => {
+      if (c.id !== activeId) return c;
+      const n: Chain = { ...c, steps: c.steps.map((s) => ({ ...s })) };
+      fn(n);
+      return n;
+    }));
   }
   function newChain() {
     const id = `chain${Date.now()}`;

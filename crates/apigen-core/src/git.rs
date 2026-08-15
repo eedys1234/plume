@@ -78,35 +78,40 @@ pub struct GitStatus {
 
 /// 현재 상태(브랜치 + 변경 파일). git 저장소가 아니면 is_repo=false.
 pub fn status(root: &Path) -> Result<GitStatus> {
-    if run(root, &["rev-parse", "--is-inside-work-tree"]).is_err() {
-        return Ok(GitStatus { is_repo: false, branch: String::new(), files: vec![], ahead: 0, behind: 0 });
+    // `git status --porcelain --branch` 한 번으로 브랜치 + ahead/behind + 파일을 모두 얻는다.
+    // (기존엔 rev-parse×2 + status + rev-list 로 subprocess 4회 → 1회로 축소.)
+    let out = match run(root, &["status", "--porcelain", "--branch"]) {
+        Ok(s) => s,
+        Err(_) => return Ok(GitStatus { is_repo: false, branch: String::new(), files: vec![], ahead: 0, behind: 0 }),
+    };
+    let mut branch = String::new();
+    let (mut ahead, mut behind) = (0u32, 0u32);
+    let mut files = vec![];
+    for line in out.lines() {
+        if let Some(b) = line.strip_prefix("## ") {
+            // "main...origin/main [ahead 1, behind 2]" | "main" | "HEAD (no branch)" | "No commits yet on main"
+            if b.contains("(no branch)") {
+                branch = "HEAD".to_string();
+            } else if let Some(rest) = b.strip_prefix("No commits yet on ") {
+                branch = rest.split_whitespace().next().unwrap_or("").to_string();
+            } else {
+                branch = b.split("...").next().unwrap_or(b).split_whitespace().next().unwrap_or("").to_string();
+            }
+            if let Some((_, ab)) = b.split_once('[') {
+                for part in ab.trim_end_matches(']').split(',') {
+                    let p = part.trim();
+                    if let Some(n) = p.strip_prefix("ahead ") { ahead = n.trim().parse().unwrap_or(0); }
+                    else if let Some(n) = p.strip_prefix("behind ") { behind = n.trim().parse().unwrap_or(0); }
+                }
+            }
+        } else if !line.is_empty() {
+            files.push(FileStatus {
+                status: line.get(0..2).unwrap_or("").to_string(),
+                path: line.get(3..).unwrap_or("").to_string(),
+            });
+        }
     }
-    let branch = run(root, &["rev-parse", "--abbrev-ref", "HEAD"])
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-
-    let porcelain = run(root, &["status", "--porcelain"])?;
-    let files = porcelain
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(|l| FileStatus {
-            status: l.get(0..2).unwrap_or("").to_string(),
-            path: l.get(3..).unwrap_or("").to_string(),
-        })
-        .collect();
-
-    // ahead/behind (원격 추적 브랜치가 있을 때만)
-    let (ahead, behind) = run(root, &["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
-        .ok()
-        .and_then(|s| {
-            let mut it = s.split_whitespace();
-            Some((it.next()?.parse().ok()?, it.next()?.parse().ok()?))
-        })
-        .unwrap_or((0, 0));
-
-    Ok(GitStatus { is_repo: true, branch, files, ahead: behind, behind: ahead })
-    // 주: rev-list --left-right count는 [behind ahead] 순서라 뒤집어 담음.
+    Ok(GitStatus { is_repo: true, branch, files, ahead, behind })
 }
 
 pub fn log(root: &Path, n: usize) -> Result<Vec<Commit>> {

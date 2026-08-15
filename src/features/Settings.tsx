@@ -1,7 +1,7 @@
 // Settings: CloudFront(S3) 배포 설정 + AWS 자격증명 입력.
 // 자격증명은 기기 로컬(localStorage)에만 저장되며 워크스페이스/깃에 포함되지 않는다.
 // 실제 배포 버튼은 Specification(Docs) 탭의 GitHub Pages 버튼 오른쪽에 있다.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { useShallow } from "zustand/react/shallow";
 import { loadDeploy, saveDeploy, clearCreds, emptyDeploy, type DeploySettings } from "./deployConfig";
@@ -44,6 +44,16 @@ export function Settings() {
 
   // 앱 메타(버전 + 업데이트 저장소)는 프로젝트와 무관 · 1회 로드.
   useEffect(() => { let alive = true; loadMeta().then((m) => { if (alive) setMeta(m); }); return () => { alive = false; }; }, []);
+
+  // 단축키 충돌 집계 + 카테고리는 바인딩이 바뀔 때만 재계산.
+  const kbInfo = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const c of COMMANDS) { const k = effectiveCombo(c.id); counts[k] = (counts[k] ?? 0) + 1; }
+    const cats: string[] = [];
+    for (const c of COMMANDS) if (!cats.includes(c.cat)) cats.push(c.cat);
+    return { counts, cats };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bindVer]);
 
   const set = (patch: Partial<DeploySettings>) => setCfg((c) => ({ ...c, ...patch }));
   const setM = (patch: Partial<AppMeta>) => setMeta((m) => ({ ...m, ...patch }));
@@ -178,12 +188,8 @@ export function Settings() {
             같은 조합이 겹치면 위 목록에서 먼저 나오는 항목이 우선합니다.
           </p>
           {(() => {
-            // 조합 충돌 집계.
-            const counts: Record<string, number> = {};
-            for (const c of COMMANDS) { const k = effectiveCombo(c.id); counts[k] = (counts[k] ?? 0) + 1; }
-            const cats: string[] = [];
-            for (const c of COMMANDS) if (!cats.includes(c.cat)) cats.push(c.cat);
-            void bindVer; // 재렌더 트리거 참조
+            // 조합 충돌 집계 + 카테고리(바인딩 변경 시에만 재계산).
+            const { counts, cats } = kbInfo;
             return cats.map((cat) => (
               <div key={cat} className="kbcat">
                 <div className="kbcattitle">{cat}</div>

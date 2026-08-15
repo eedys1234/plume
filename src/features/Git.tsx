@@ -39,12 +39,17 @@ export function Git() {
       const s = await api.gitStatus(projectDir);
       setStatus(s);
       if (s.isRepo) {
-        setLog(await api.gitLog(projectDir, 30));
-        setBranches(await api.gitBranches(projectDir));
-        setRemotes(await api.gitRemotes(projectDir));
-        setGraphData(await api.gitGraphData(projectDir, 80));
-        setStashes(await api.gitStashList(projectDir));
-        try { setWorktrees(await api.gitWorktreeList(projectDir)); } catch { setWorktrees([]); }
+        // 독립적인 6개 읽기를 병렬로(직렬 왕복 → 동시 실행). 각 git 액션 후 refresh가 훨씬 빨라짐.
+        const [log, branches, remotes, graph, stashes, worktrees] = await Promise.all([
+          api.gitLog(projectDir, 30),
+          api.gitBranches(projectDir),
+          api.gitRemotes(projectDir),
+          api.gitGraphData(projectDir, 80),
+          api.gitStashList(projectDir),
+          api.gitWorktreeList(projectDir).catch(() => []),
+        ]);
+        setLog(log); setBranches(branches); setRemotes(remotes);
+        setGraphData(graph); setStashes(stashes); setWorktrees(worktrees);
       }
     } catch (e: any) {
       setMsg(String(e?.message ?? e));
@@ -354,11 +359,15 @@ export function Git() {
   );
 }
 
+const DIFF_MAX_LINES = 2000; // 초대형 diff에서 DOM 폭주 방지
 function DiffView({ text }: { text: string }) {
   if (!text.trim()) return <p className="hint">변경 없음 (또는 바이너리)</p>;
+  const allLines = text.split("\n");
+  const truncated = allLines.length > DIFF_MAX_LINES;
+  const lines = truncated ? allLines.slice(0, DIFF_MAX_LINES) : allLines;
   return (
     <pre className="diffview">
-      {text.split("\n").map((line, i) => {
+      {lines.map((line, i) => {
         let cls = "dl";
         if (line.startsWith("+") && !line.startsWith("+++")) cls = "dl add";
         else if (line.startsWith("-") && !line.startsWith("---")) cls = "dl del";
@@ -370,6 +379,7 @@ function DiffView({ text }: { text: string }) {
           </div>
         );
       })}
+      {truncated && <div className="dl meta">… diff가 너무 커서 {DIFF_MAX_LINES.toLocaleString()}줄만 표시(전체 {allLines.length.toLocaleString()}줄)</div>}
     </pre>
   );
 }
