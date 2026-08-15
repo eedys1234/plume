@@ -554,13 +554,13 @@ button.active.danger:hover { background: #b0311f; }
 .settingbar button.danger:hover { background: var(--danger, #c0392b); color: #fff; }
 
 /* 전역 알림/오류 모달 */
-.alertmodal { width: 560px; max-width: 92vw; padding: 0; }
-.alertmodal.err .iomodalhead h3 { color: var(--danger, #e06c5a); }
+.modal.alertmodal { width: 560px; max-width: 92vw; padding: 0; }
+.modal.alertmodal.err .iomodalhead h3 { color: var(--danger, #e06c5a); }
 .alertbody { margin: 0; padding: 16px 20px; max-height: 52vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6; font-family: var(--mono); color: var(--text); }
 .alertbar { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid var(--line); }
 
 /* CloudFront 배포 모달 */
-.cfmodal { width: 520px; max-width: 92vw; padding: 0; }
+.modal.cfmodal { width: 520px; max-width: 92vw; padding: 0; }
 .cfbody { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
 .cffield { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-dim); }
 .cffield input { padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 13px; }
@@ -569,16 +569,24 @@ button.active.danger:hover { background: #b0311f; }
 .cfpreview code { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2); border-radius: 4px; padding: 2px 6px; word-break: break-all; }
 
 /* 사용 매뉴얼 모달 */
-.manualmodal { width: 1120px; max-width: 96vw; padding: 0; overflow: hidden; }
+.modal.manualmodal { width: 1080px; max-width: 96vw; padding: 0; overflow: hidden; }
 .manualmodal .iomodalhead { padding: 14px 22px; border-bottom: 1px solid var(--line); }
-.manualwrap { display: flex; height: 78vh; }
-.manualnav { flex: none; width: 210px; border-right: 1px solid var(--line); overflow: auto; padding: 10px; background: var(--surface); }
-.manualnav button { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 8px 11px; border: none; background: transparent; color: var(--text-dim); border-radius: 6px; cursor: pointer; font-size: 13px; }
+.manualwrap { display: flex; height: 78vh; min-width: 0; }
+.manualnav { flex: none; width: 190px; border-right: 1px solid var(--line); overflow: auto; padding: 10px; background: var(--surface); }
+.manualnav button { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 8px 11px; border: none; background: transparent; color: var(--text-dim); border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap; }
 .manualnav button:hover { background: var(--accent-weak, var(--surface-2)); color: var(--text); }
 .manualnav .mnicon { width: 16px; text-align: center; }
-.manualbody { flex: 1; min-width: 0; overflow: auto; padding: 26px 40px; scrollbar-gutter: stable; }
-/* 본문 텍스트는 가독 길이(약 70~80자)로 제한, 표/코드는 전체 폭 사용 */
-.manualbody .manp, .manualbody .manlist, .manualbody .mansteps, .manualbody .mannote, .manualbody .mansub { max-width: 760px; }
+.manualbody { flex: 1; min-width: 0; overflow: auto; padding: 24px 30px; scrollbar-gutter: stable; }
+/* 본문 텍스트는 가독 길이로 제한(넓은 화면), 표/코드는 전체 폭 사용 */
+.manualbody .manp, .manualbody .manlist, .manualbody .mansteps, .manualbody .mannote, .manualbody .mansub { max-width: 780px; }
+/* 좁은 창: 목차를 상단 가로 바로 접고 본문이 전체 폭을 쓰게 함(글자 잘림 방지) */
+@media (max-width: 760px) {
+  .manualwrap { flex-direction: column; height: 80vh; }
+  .manualnav { width: auto; display: flex; flex-direction: row; gap: 4px; overflow-x: auto; overflow-y: hidden; border-right: none; border-bottom: 1px solid var(--line); padding: 8px; }
+  .manualnav button { width: auto; flex: none; padding: 6px 10px; font-size: 12px; }
+  .manualbody { padding: 18px 20px; }
+  .manualbody .manp, .manualbody .manlist, .manualbody .mansteps, .manualbody .mannote, .manualbody .mansub { max-width: none; }
+}
 .mansec { margin-bottom: 34px; scroll-margin-top: 12px; }
 .mansec + .mansec { border-top: 1px solid var(--line); padding-top: 22px; }
 .mansectitle { margin: 0 0 10px; font-size: 18px; }
