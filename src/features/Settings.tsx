@@ -17,7 +17,7 @@ export function Settings() {
   const [meta, setMeta] = useState<AppMeta>(defaultMeta());
   const [recId, setRecId] = useState<string | null>(null); // 녹화 중인 command id
   const [bindVer, setBindVer] = useState(0); // 바인딩 변경 후 재렌더용
-  const [tab, setTab] = useState<"cf" | "aws" | "update" | "keys">("cf");
+  const [tab, setTab] = useState<"deploy" | "update" | "keys">("deploy");
 
   // 녹화: recId 설정되면 다음 키 입력을 캡처해 바인딩. Esc=취소.
   useEffect(() => {
@@ -58,12 +58,12 @@ export function Settings() {
         <h2>⚙ Settings</h2>
 
         <div className="settingtabs">
-          {([["cf", "☁ CloudFront"], ["aws", "🔑 자격증명"], ["update", "⬆ 업데이트"], ["keys", "⌨ 단축키"]] as const).map(([id, label]) => (
+          {([["deploy", "☁ 배포"], ["update", "⬆ 업데이트"], ["keys", "⌨ 단축키"]] as const).map(([id, label]) => (
             <button key={id} className={tab === id ? "stab active" : "stab"} onClick={() => setTab(id)}>{label}</button>
           ))}
         </div>
 
-        {tab === "cf" && (
+        {tab === "deploy" && (
         <section className="settingsec">
           <h3>☁ CloudFront 배포</h3>
           <p className="hint tiny">
@@ -104,7 +104,7 @@ export function Settings() {
         </section>
         )}
 
-        {tab === "aws" && (
+        {tab === "deploy" && (
         <section className="settingsec">
           <h3>🔑 AWS 자격증명</h3>
           <p className="hint tiny">
