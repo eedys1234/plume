@@ -7,7 +7,8 @@ import { api } from "../ipc";
 export interface DeploySettings {
   region: string;
   bucket: string;
-  key: string;
+  key: string;        // (레거시) 단일 키. 이제 keyPrefix + 배포 시 입력 경로로 조합.
+  keyPrefix: string;  // 기본 경로 프리픽스(예: docs/). 배포 모달에서 뒤 경로를 덧붙임.
   distributionId: string;
   invalidationPath: string;
   viewer: "redoc" | "swagger";
@@ -21,6 +22,7 @@ export const emptyDeploy = (): DeploySettings => ({
   region: "ap-northeast-2",
   bucket: "",
   key: "index.html",
+  keyPrefix: "",
   distributionId: "",
   invalidationPath: "/*",
   viewer: "redoc",

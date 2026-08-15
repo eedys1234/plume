@@ -92,8 +92,8 @@ export function Settings() {
               <input value={cfg.bucket} onChange={(e) => set({ bucket: e.target.value })} placeholder="my-docs-bucket" />
             </label>
             <label>
-              오브젝트 Key
-              <input value={cfg.key} onChange={(e) => set({ key: e.target.value })} placeholder="index.html" />
+              Key Prefix <span className="hint tiny">(기본 경로)</span>
+              <input value={cfg.keyPrefix} onChange={(e) => set({ keyPrefix: e.target.value })} placeholder="예: docs/  (비우면 루트)" />
             </label>
             <label>
               CloudFront 배포 ID

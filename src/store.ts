@@ -133,6 +133,11 @@ interface AppState {
   showToast: (message: string, kind?: "ok" | "err") => void;
   dismissToast: () => void;
 
+  // 전역 알림 모달(어떤 기능이든 오류·결과를 눈에 띄게 표시)
+  alert: { title: string; message: string; kind: "err" | "ok" | "info" } | null;
+  showAlert: (message: string, opts?: { title?: string; kind?: "err" | "ok" | "info" }) => void;
+  closeAlert: () => void;
+
   // 호출 히스토리 + Call 프리필
   history: HistoryEntry[];
   addHistory: (e: Omit<HistoryEntry, "id" | "at">) => void;
@@ -420,6 +425,10 @@ export const useStore = create<AppState>()(
   toast: null,
   showToast: (message, kind = "ok") => set({ toast: { message, kind, at: Date.now() } }),
   dismissToast: () => set({ toast: null }),
+
+  alert: null,
+  showAlert: (message, opts) => set({ alert: { message, title: opts?.title ?? (opts?.kind === "err" ? "오류" : "알림"), kind: opts?.kind ?? "info" } }),
+  closeAlert: () => set({ alert: null }),
 
   history: [],
   addHistory: (e) =>

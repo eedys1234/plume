@@ -538,6 +538,7 @@ export function App() {
       )}
 
       <Toast />
+      <AlertModal />
 
       {showImport && (
         <div className="modalbg" onClick={() => setShowImport(false)}>
@@ -889,6 +890,32 @@ function WorkspaceSwitcher({ onOpenWs, onNewWs, onChangeRoot, onRenameWs, onDele
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// 전역 알림/오류 모달 — 어떤 기능이든 오류·결과를 눈에 띄게 표시. 긴 메시지도 스크롤로 다 보임.
+function AlertModal() {
+  const alert = useStore((s) => s.alert);
+  const close = useStore((s) => s.closeAlert);
+  useEffect(() => {
+    if (!alert) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [alert, close]);
+  if (!alert) return null;
+  const icon = alert.kind === "err" ? "⚠️" : alert.kind === "ok" ? "✅" : "ℹ️";
+  return (
+    <div className="modalbg" onClick={close}>
+      <div className={`modal alertmodal ${alert.kind}`} onClick={(e) => e.stopPropagation()}>
+        <div className="iomodalhead">
+          <h3>{icon} {alert.title}</h3>
+          <button onClick={close}>닫기</button>
+        </div>
+        <pre className="alertbody">{alert.message}</pre>
+        <div className="alertbar"><button className="active" onClick={close}>확인</button></div>
+      </div>
     </div>
   );
 }

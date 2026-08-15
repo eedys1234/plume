@@ -6,7 +6,7 @@ import { api } from "../ipc";
 import { pickSavePath, confirmWarn } from "../dialog";
 import { useStore } from "../store";
 import { useShallow } from "zustand/react/shallow";
-import { loadDeploy } from "./deployConfig";
+import { loadDeploy, type DeploySettings } from "./deployConfig";
 
 type View = "markdown" | "redoc" | "swagger";
 
@@ -169,6 +169,9 @@ export function Docs() {
   }, [docSpec]);
 
   const [busy, setBusy] = useState<"" | "html" | "pages" | "cf">("");
+  const showAlert = useStore((s) => s.showAlert);
+  const [cfModal, setCfModal] = useState<DeploySettings | null>(null); // CF 배포 모달(설정 스냅샷)
+  const [cfPath, setCfPath] = useState("index.html");
 
   // 현재 문서 뷰(redoc/swagger)에 맞춰 배포한다.
   const viewer: "redoc" | "swagger" = view === "swagger" ? "swagger" : "redoc";
@@ -223,16 +226,28 @@ export function Docs() {
     }
   }
 
-  // CloudFront(S3) 배포: Settings 탭에 저장한 자격증명·설정으로 현재 문서를 업로드 + 무효화.
+  // 프리픽스 + 경로 → 최종 S3 키(양끝 슬래시 정리).
+  function joinKey(prefix: string, path: string): string {
+    return [prefix.replace(/^\/+|\/+$/g, ""), path.replace(/^\/+/, "")].filter(Boolean).join("/") || "index.html";
+  }
+
+  // ☁ CloudFront 배포: 자격증명 확인(없으면 오류 모달) → 있으면 경로 입력 모달 오픈.
   async function deployCf() {
     const d = await loadDeploy(projectDir);
     if (!d.accessKeyId.trim() || !d.secretAccessKey.trim() || !d.bucket.trim()) {
-      setMsg("Settings 탭에서 AWS 자격증명·버킷을 먼저 입력하세요");
-      useStore.getState().setGnb("settings");
+      showAlert("Settings ▸ 배포 탭에서 AWS 자격증명(Access Key/Secret)과 S3 버킷을 먼저 입력·저장하세요.", { title: "배포 설정 필요", kind: "err" });
       return;
     }
+    setCfPath("index.html");
+    setCfModal(d);
+  }
+
+  // 실제 배포 실행. 결과·오류는 전역 모달로 표시.
+  async function runCfDeploy() {
+    const d = cfModal;
+    if (!d) return;
+    const key = joinKey(d.keyPrefix, cfPath);
     setBusy("cf");
-    setMsg(`CloudFront 배포 중… (${viewer} → s3://${d.bucket}/${d.key})`);
     try {
       const log = await api.deployCloudFront({
         accessKeyId: d.accessKeyId,
@@ -240,16 +255,18 @@ export function Docs() {
         sessionToken: d.sessionToken || undefined,
         region: d.region,
         bucket: d.bucket,
-        key: d.key,
+        key,
         distributionId: d.distributionId,
         invalidationPath: d.invalidationPath,
         roleArn: d.roleArn || undefined,
         viewer,
         spec: docSpec,
       });
-      setMsg(log);
+      setCfModal(null);
+      showAlert(log, { title: "CloudFront 배포 완료", kind: "ok" });
+      useStore.getState().logEvent("Export", `CloudFront 배포 · s3://${d.bucket}/${key}`);
     } catch (e: any) {
-      setMsg(`CloudFront 배포 실패: ${e?.message ?? e}`);
+      showAlert(`배포에 실패했습니다.\n\ns3://${d.bucket}/${key}\n\n${e?.message ?? e}`, { title: "CloudFront 배포 실패", kind: "err" });
     } finally {
       setBusy("");
     }
@@ -366,6 +383,40 @@ export function Docs() {
           srcDoc={swaggerDoc}
           sandbox="allow-scripts allow-forms allow-same-origin"
         />
+      )}
+
+      {cfModal && (
+        <div className="modalbg" onClick={() => busy !== "cf" && setCfModal(null)}>
+          <div className="modal cfmodal" onClick={(e) => e.stopPropagation()}>
+            <div className="iomodalhead">
+              <h3>☁ CloudFront 배포</h3>
+              <button disabled={busy === "cf"} onClick={() => setCfModal(null)}>닫기</button>
+            </div>
+            <div className="cfbody">
+              <p className="hint tiny">
+                {viewer} 문서를 S3에 업로드하고 CloudFront를 무효화합니다. 프리픽스(설정)는 고정, 아래에 뒤 경로를 입력하세요.
+              </p>
+              <label className="cffield">
+                Key Prefix <span className="hint tiny">(Settings)</span>
+                <input value={cfModal.keyPrefix || "(루트)"} readOnly disabled />
+              </label>
+              <label className="cffield">
+                경로 <span className="hint tiny">(프리픽스 뒤 · 파일명 포함)</span>
+                <input autoFocus value={cfPath} onChange={(e) => setCfPath(e.target.value)} placeholder="index.html" onKeyDown={(e) => { if (e.key === "Enter" && busy !== "cf") runCfDeploy(); }} />
+              </label>
+              <div className="cfpreview">
+                업로드 대상: <code>s3://{cfModal.bucket}/{joinKey(cfModal.keyPrefix, cfPath)}</code>
+              </div>
+              <div className="cfpreview">
+                무효화: <code>{cfModal.distributionId ? `${cfModal.distributionId} · ${cfModal.invalidationPath || "/*"}` : "(배포 ID 없음 → 생략)"}</code>
+              </div>
+            </div>
+            <div className="alertbar">
+              <button disabled={busy === "cf"} onClick={() => setCfModal(null)}>취소</button>
+              <button className="active" disabled={busy === "cf"} onClick={runCfDeploy}>{busy === "cf" ? "배포 중…" : "배포"}</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
