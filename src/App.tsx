@@ -7,6 +7,7 @@ import { useStore as useZustandStore } from "zustand";
 import { checkForUpdate, needsUpdate, applyUpdate, resolveAppVersion, CURRENT_VERSION, type UpdateCheck, type UpdateInfo } from "./update";
 import { loadMeta, saveMeta } from "./appMeta";
 import { eventToCombo, commandForEvent, COMMANDS, effectiveCombo, comboTokens, IS_MAC } from "./keybindings";
+import { ManualModal } from "./features/Manual";
 import { ErrorBoundary } from "./features/ErrorBoundary";
 import { Builder } from "./features/Builder";
 
@@ -87,6 +88,7 @@ export function App() {
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [showUpdate, setShowUpdate] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showManual, setShowManual] = useState(false);
   const [checking, setChecking] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -217,8 +219,8 @@ export function App() {
       }
     };
     const onKey = (e: KeyboardEvent) => {
-      // Esc: 단축키 도움말 닫기(다른 Esc 동작 방해 않도록 preventDefault 안 함).
-      if (e.key === "Escape") { setShowShortcuts((v) => (v ? false : v)); return; }
+      // Esc: 열린 도움말/매뉴얼 닫기(다른 Esc 동작 방해 않도록 preventDefault 안 함).
+      if (e.key === "Escape") { setShowShortcuts((v) => (v ? false : v)); setShowManual((v) => (v ? false : v)); return; }
       const combo = eventToCombo(e);
       if (!combo) return;
       const id = commandForEvent(e);
@@ -445,11 +447,13 @@ export function App() {
           <span className={errors ? "badge err" : "badge"}>err {errors}</span>
           <span className={warns ? "badge warn" : "badge"}>warn {warns}</span>
         </button>
-        <button className="iconbtn" title="단축키 보기 (?)" onClick={() => setShowShortcuts(true)}>⌨</button>
+        <button className="iconbtn" title="사용 매뉴얼" onClick={() => setShowManual(true)}>📖</button>
+        <button className="iconbtn" title="단축키 보기 (F1)" onClick={() => setShowShortcuts(true)}>⌨</button>
         <span className="status">{status}</span>
       </header>
 
       {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
+      {showManual && <ManualModal onClose={() => setShowManual(false)} />}
 
       {showDiag && (
         <>
