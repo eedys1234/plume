@@ -237,6 +237,9 @@ export const api = {
     invoke<void>("save_workspace_collections", { wsDir, collections }),
   loadWorkspaceCollections: (wsDir: string) =>
     invoke<{ name: string; spec: Spec }[]>("load_workspace_collections", { wsDir }),
+  // 각 컬렉션을 Bruno 포맷(<ws>/bruno/<이름>/)으로도 내보내 Bruno 앱에서 열 수 있게 한다.
+  exportWorkspaceBruno: (wsDir: string, collections: { name: string; spec: Spec }[]) =>
+    invoke<string>("export_workspace_bruno", { wsDir, collections }),
   gitRemotes: (dir: string) => invoke<[string, string][]>("git_remotes", { dir }),
   gitAddRemote: (dir: string, name: string, url: string) =>
     invoke<void>("git_add_remote", { dir, name, url }),

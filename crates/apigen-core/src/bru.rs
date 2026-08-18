@@ -498,8 +498,14 @@ fn bru_sanitize(s: &str) -> String {
 
 /// 스펙 전체를 Bruno 컬렉션(`<root>/bruno/`)으로 Export. bruno.json + 폴더별 `.bru`.
 pub fn export_collection(root: &Path, spec: &OpenAPI) -> Result<PathBuf> {
-    let base = root.join("bruno");
-    fs::create_dir_all(&base)?;
+    export_collection_at(&root.join("bruno"), spec)
+}
+
+/// 지정한 디렉터리 자체를 Bruno 컬렉션 루트로 삼아 Export(bruno.json + `.bru` 트리).
+/// 저장 시 여러 컬렉션을 `bruno/<이름>/` 로 각각 내보내는 데 사용.
+pub fn export_collection_at(base: &Path, spec: &OpenAPI) -> Result<PathBuf> {
+    let _ = fs::remove_dir_all(base); // 이전 .bru(삭제된 요청 등) 정리 후 재작성
+    fs::create_dir_all(base)?;
 
     let bruno = serde_json::json!({
         "version": "1",
@@ -529,7 +535,7 @@ pub fn export_collection(root: &Path, spec: &OpenAPI) -> Result<PathBuf> {
                 .operation_id
                 .clone()
                 .unwrap_or_else(|| format!("{method}_{}", bru_sanitize(path)));
-            let mut dir = base.clone();
+            let mut dir = base.to_path_buf();
             for s in folder.split('/').filter(|s| !s.is_empty()) {
                 dir = dir.join(bru_sanitize(s));
             }
@@ -539,7 +545,7 @@ pub fn export_collection(root: &Path, spec: &OpenAPI) -> Result<PathBuf> {
             seq += 1;
         }
     }
-    Ok(base)
+    Ok(base.to_path_buf())
 }
 
 // ─────────────────────────── Import: Bruno 컬렉션 → OpenAPI ───────────────────────────

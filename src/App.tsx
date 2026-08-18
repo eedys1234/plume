@@ -157,6 +157,13 @@ export function App() {
       await st.persistClient(dir);
       await api.writeTextFile(`${dir}/.apigen/chains.json`, JSON.stringify(st.chains, null, 2));
       await api.writeTextFile(`${dir}/.plume/workspace.json`, JSON.stringify({ name: st.workspaceName || basename(dir) }, null, 2));
+      // Bruno 호환 저장(설정 ON일 때 수동 저장에서만): <ws>/bruno/<이름>/ 로도 내보내 Bruno 앱에서 열림.
+      // 대형 컬렉션에서 매 자동저장마다 전량 재작성하면 느려서 수동(Ctrl+S)에만 수행.
+      if (!silent && localStorage.getItem("plume.brunoCompat") === "1") {
+        try { await api.exportWorkspaceBruno(dir, cols); } catch (e: any) {
+          st.showAlert(`${e?.message ?? e}`, { title: "Bruno 호환 저장 실패", kind: "err" });
+        }
+      }
       if (silent) {
         setStatus(`자동 저장됨 · ${new Date().toLocaleTimeString()}`);
       } else {

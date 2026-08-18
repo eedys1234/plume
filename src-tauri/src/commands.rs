@@ -452,6 +452,29 @@ pub fn save_workspace_collections(ws_dir: String, collections: Vec<CollectionIn>
     Ok(())
 }
 
+/// 워크스페이스의 각 컬렉션을 Bruno 컬렉션으로도 저장한다(`<ws>/bruno/<이름>/` = bruno.json + .bru 트리).
+/// → 같은 폴더를 Bruno 앱에서 열 수 있음. Plume 자체 포맷(collections/)과 병행.
+#[tauri::command]
+pub fn export_workspace_bruno(ws_dir: String, collections: Vec<CollectionIn>) -> CmdResult<String> {
+    let base = Path::new(&ws_dir).join("bruno");
+    std::fs::create_dir_all(&base).map_err(core::CoreError::from)?;
+    let mut keep: std::collections::BTreeSet<std::path::PathBuf> = std::collections::BTreeSet::new();
+    for c in &collections {
+        let spec = to_spec(c.spec.clone())?;
+        let dir = base.join(safe_name(&c.name));
+        keep.insert(dir.clone());
+        core::bru::export_collection_at(&dir, &spec)?;
+    }
+    // 삭제·이름변경된 컬렉션의 bruno 폴더 정리.
+    if let Ok(rd) = std::fs::read_dir(&base) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() && !keep.contains(&p) { let _ = std::fs::remove_dir_all(&p); }
+        }
+    }
+    Ok(base.to_string_lossy().to_string())
+}
+
 /// 워크스페이스의 컬렉션들을 로드. `collections/` 없으면 레거시(ws 루트 자체 = 컬렉션 1개)로 대응.
 #[tauri::command]
 pub fn load_workspace_collections(ws_dir: String) -> CmdResult<Vec<CollectionOut>> {

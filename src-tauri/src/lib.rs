@@ -121,6 +121,7 @@ pub fn run() {
             commands::rename_workspace,
             commands::delete_workspace,
             commands::save_workspace_collections,
+            commands::export_workspace_bruno,
             commands::load_workspace_collections,
             commands::git_graph,
             commands::git_graph_data,

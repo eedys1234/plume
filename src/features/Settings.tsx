@@ -17,7 +17,8 @@ export function Settings() {
   const [meta, setMeta] = useState<AppMeta>(defaultMeta());
   const [recId, setRecId] = useState<string | null>(null); // 녹화 중인 command id
   const [bindVer, setBindVer] = useState(0); // 바인딩 변경 후 재렌더용
-  const [tab, setTab] = useState<"deploy" | "update" | "keys">("deploy");
+  const [tab, setTab] = useState<"deploy" | "update" | "save" | "keys">("deploy");
+  const [brunoCompat, setBrunoCompat] = useState(() => localStorage.getItem("plume.brunoCompat") === "1");
 
   // 녹화: recId 설정되면 다음 키 입력을 캡처해 바인딩. Esc=취소.
   useEffect(() => {
@@ -68,7 +69,7 @@ export function Settings() {
         <h2>⚙ Settings</h2>
 
         <div className="settingtabs">
-          {([["deploy", "☁ 배포"], ["update", "⬆ 업데이트"], ["keys", "⌨ 단축키"]] as const).map(([id, label]) => (
+          {([["deploy", "☁ 배포"], ["update", "⬆ 업데이트"], ["save", "🗂 저장"], ["keys", "⌨ 단축키"]] as const).map(([id, label]) => (
             <button key={id} className={tab === id ? "stab active" : "stab"} onClick={() => setTab(id)}>{label}</button>
           ))}
         </div>
@@ -177,6 +178,35 @@ export function Settings() {
         </section>
         )}
 
+        {tab === "save" && (
+        <section className="settingsec">
+          <h3>🗂 저장 형식</h3>
+          <p className="hint tiny">
+            Plume은 워크스페이스를 자체 포맷(<code>collections/</code>)으로 저장합니다. 아래를 켜면
+            수동 저장(<b>Ctrl/⌘+S</b>) 시 각 컬렉션을 <b>Bruno</b> 포맷으로도 함께 내보내
+            같은 워크스페이스 폴더의 <code>bruno/&lt;컬렉션 이름&gt;/</code> 를 Bruno 앱에서 바로 열 수 있습니다.
+          </p>
+          <label className="row" style={{ gap: 8, alignItems: "center", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={brunoCompat}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setBrunoCompat(on);
+                if (on) localStorage.setItem("plume.brunoCompat", "1");
+                else localStorage.removeItem("plume.brunoCompat");
+                showToast(on ? "Bruno 호환 저장 켜짐 ✓" : "Bruno 호환 저장 꺼짐");
+              }}
+            />
+            <span>Bruno 호환 저장 (<code>bruno/</code> 폴더에 <code>.bru</code> 함께 생성)</span>
+          </label>
+          <p className="hint tiny" style={{ marginTop: 8 }}>
+            자동 저장이 아니라 <b>수동 저장에서만</b> 수행됩니다(대형 컬렉션에서 전량 재작성이 무거워서).
+            Bruno에서 열려면 Bruno 앱 → <b>Open Collection</b> → <code>bruno/&lt;이름&gt;</code> 폴더를 선택하세요.
+          </p>
+        </section>
+        )}
+
         {tab === "keys" && (
         <section className="settingsec">
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
@@ -217,7 +247,7 @@ export function Settings() {
         </section>
         )}
 
-        {tab !== "keys" && (
+        {(tab === "deploy" || tab === "update") && (
         <div className="settingbar">
           <button className="active" onClick={save}>설정 저장</button>
           {hasCreds && <button className="danger" onClick={clear}>자격증명 삭제</button>}
