@@ -184,7 +184,7 @@ export function App() {
     }
   }, []);
 
-  // 자동 저장: collections/chains 변경 후 2초 뒤 조용히 저장(변경분만 쓰므로 저렴). 데이터 유실 방지.
+  // 자동 저장: collections/chains 변경 후 1분 뒤 조용히 저장(변경분만 쓰므로 저렴). 데이터 유실 방지.
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const unsub = useStore.subscribe((state: any, prev: any) => {
@@ -193,7 +193,7 @@ export function App() {
       if (!useStore.getState().projectDir) return;
       setDirty(true); // 변경 발생 → 미저장 표시(자동 저장이 곧 해제)
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      autoSaveTimer.current = setTimeout(() => { void saveWorkspace(true); }, 2000);
+      autoSaveTimer.current = setTimeout(() => { void saveWorkspace(true); }, 60000);
     });
     return () => { unsub(); if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
   }, [saveWorkspace, setDirty]);
