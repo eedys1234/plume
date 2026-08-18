@@ -10,6 +10,7 @@ import { eventToCombo, commandForEvent, COMMANDS, effectiveCombo, comboTokens, I
 import { ManualModal } from "./features/Manual";
 import { ErrorBoundary } from "./features/ErrorBoundary";
 import { Builder } from "./features/Builder";
+import { AdBanner } from "./features/AdBanner";
 
 // 시작 시엔 기본 화면(Builder)만 로드하고, 보조 탭·모달은 처음 열 때 지연 로드한다.
 // 특히 ApiCallChain은 무거운 다이어그램 의존성(mermaid·cytoscape·katex ~1MB)을 포함.
@@ -586,6 +587,9 @@ export function App() {
           </div>
         </div>
       )}
+
+      {/* 하단 광고 배너 슬롯(전체 폭 · 중앙 정렬 · 접기 가능) */}
+      <AdBanner />
 
       <Toast />
       <AlertModal />

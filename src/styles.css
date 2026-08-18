@@ -325,6 +325,16 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .lnblabel { font-size: 10px; letter-spacing: -0.01em; }
 .mainarea { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
 
+/* 하단 광고 배너 슬롯 — 전체 폭, 중앙 정렬, 접기 가능 */
+.adbar { flex: none; position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 7px 40px; min-height: 46px; border-top: 1px solid var(--line); background: var(--surface); }
+.adbar.collapsed { min-height: 22px; padding: 2px 40px; }
+.adlabel { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint); }
+.adslot { display: flex; align-items: center; justify-content: center; width: 100%; }
+.adslot img { max-width: 100%; max-height: 90px; display: block; border-radius: 4px; }
+.adplaceholder { width: 100%; max-width: 728px; height: 74px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--text-faint); border: 1px dashed var(--line); border-radius: 8px; background: var(--surface-2); }
+.adcollapse { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); width: 22px; height: 22px; padding: 0; border: 1px solid var(--line); background: var(--surface-2); color: var(--text-dim); border-radius: 6px; font-size: 10px; line-height: 1; cursor: pointer; }
+.adcollapse:hover { border-color: var(--accent); color: var(--text); }
+
 /* API 검색 (Design) */
 .apisearch { display: flex; align-items: center; gap: 6px; padding: 5px 9px; margin-bottom: 8px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); }
 .apisearch .si { color: var(--text-faint); font-size: 12px; }
