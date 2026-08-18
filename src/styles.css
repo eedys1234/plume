@@ -580,6 +580,8 @@ button.active.danger:hover { background: #b0311f; }
 .manualnav { flex: none; width: 190px; border-right: 1px solid var(--line); overflow: auto; padding: 10px; background: var(--surface); }
 .manualnav button { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 8px 11px; border: none; background: transparent; color: var(--text-dim); border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap; }
 .manualnav button:hover { background: var(--accent-weak, var(--surface-2)); color: var(--text); }
+/* 현재 보고 있는 섹션(스크롤 스파이) 하이라이트 */
+.manualnav button.mnactive { background: var(--accent-soft, var(--surface-2)); color: var(--accent-hover, var(--text)); font-weight: 600; box-shadow: inset 3px 0 0 var(--accent); }
 .manualnav .mnicon { width: 16px; text-align: center; }
 .manualbody { flex: 1; min-width: 0; overflow: auto; padding: 24px 30px; scrollbar-gutter: stable; }
 /* 본문 텍스트는 가독 길이로 제한(넓은 화면), 표/코드는 전체 폭 사용 */

@@ -1,5 +1,5 @@
 // 앱 내장 사용자 매뉴얼. 툴바 📖 버튼으로 열리는 모달(좌측 목차 + 우측 내용).
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { COMMANDS, effectiveCombo, comboTokens } from "../keybindings";
 
 type Block =
@@ -197,9 +197,34 @@ function renderBlock(b: Block, i: number) {
 
 export function ManualModal({ onClose }: { onClose: () => void }) {
   const bodyRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState<string>(SECTIONS[0].id);
   const go = (id: string) => {
+    setActive(id); // 클릭 즉시 반영(스크롤 스파이가 곧 확정)
     bodyRef.current?.querySelector(`#man-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+
+  // 스크롤 스파이: 현재 상단에 걸린 섹션을 좌측 목차에 하이라이트.
+  // (스크롤 이벤트 기반 — 창이 화면에 표시되지 않아도 동작. IntersectionObserver는 컴포지팅 의존.)
+  useEffect(() => {
+    const root = bodyRef.current;
+    if (!root) return;
+    const ids = [...SECTIONS.map((s) => s.id), "shortcuts"];
+    const onScroll = () => {
+      const threshold = root.getBoundingClientRect().top + 80; // 상단 여유 80px
+      let current = ids[0];
+      for (const id of ids) {
+        const el = root.querySelector(`#man-${id}`) as HTMLElement | null;
+        if (!el) continue;
+        if (el.getBoundingClientRect().top <= threshold) current = id; // 상단을 지난 마지막 섹션
+        else break;
+      }
+      setActive(current);
+    };
+    onScroll();
+    root.addEventListener("scroll", onScroll, { passive: true });
+    return () => root.removeEventListener("scroll", onScroll);
+  }, []);
+
   return (
     <div className="modalbg" onClick={onClose}>
       <div className="modal manualmodal" onClick={(e) => e.stopPropagation()}>
@@ -210,9 +235,9 @@ export function ManualModal({ onClose }: { onClose: () => void }) {
         <div className="manualwrap">
           <nav className="manualnav">
             {SECTIONS.map((s) => (
-              <button key={s.id} onClick={() => go(s.id)}><span className="mnicon">{s.icon}</span>{s.title}</button>
+              <button key={s.id} className={active === s.id ? "mnactive" : ""} onClick={() => go(s.id)}><span className="mnicon">{s.icon}</span>{s.title}</button>
             ))}
-            <button onClick={() => go("shortcuts")}><span className="mnicon">⌨</span>단축키</button>
+            <button className={active === "shortcuts" ? "mnactive" : ""} onClick={() => go("shortcuts")}><span className="mnicon">⌨</span>단축키</button>
           </nav>
           <div className="manualbody" ref={bodyRef}>
             {SECTIONS.map((s) => (
