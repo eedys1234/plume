@@ -245,10 +245,12 @@ export function ExportPanel() {
   }
 
   async function exportBruno() {
-    if (!projectDir) return setMsg("프로젝트 폴더를 먼저 여세요");
     if (!spec) return;
+    // 저장 위치를 직접 선택(기본: 프로젝트 폴더). 선택 폴더 아래 bruno/ 트리를 생성.
+    const dest = await pickDirectory(projectDir || undefined);
+    if (!dest) return;
     try {
-      const p = await api.exportBruCollection(projectDir, spec);
+      const p = await api.exportBruCollection(dest, spec);
       setMsg(`✓ Bruno(.bru) 컬렉션 생성: ${p}`);
       logEvent("Export", `.bru 컬렉션 · ${p}`);
     } catch (e: any) {
@@ -286,12 +288,13 @@ export function ExportPanel() {
             {isAll
               ? `전체 ${collections.length}개 컬렉션을 하나로 병합해 내보냅니다.`
               : "대상 컬렉션을 선택하고 형식을 고르세요."}
+            {" "}파일 다운로드는 저장 위치 선택 창이 뜨며 기본값은 다운로드 폴더입니다.
           </p>
           <div className="exportbtns">
             <button onClick={() => downloadOpenapi("yaml")}><b>OpenAPI YAML</b><span>다운로드</span></button>
             <button onClick={() => downloadOpenapi("json")}><b>OpenAPI JSON</b><span>다운로드</span></button>
             <button onClick={downloadPostman}><b>Postman Collections</b><span>다운로드</span></button>
-            <button onClick={exportBruno}><b>Bruno Collections</b><span>프로젝트에 생성</span></button>
+            <button onClick={exportBruno}><b>Bruno Collections</b><span>폴더 선택 → 생성</span></button>
             <button onClick={downloadHtml}><b>Redoc HTML</b><span>단일 파일 다운로드</span></button>
           </div>
         </div>
