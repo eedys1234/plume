@@ -93,6 +93,13 @@ export function App() {
   const [updating, setUpdating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [appVer, setAppVer] = useState(CURRENT_VERSION);
+  // 미저장 변경 여부: UI 표기용 state + 종료 핸들러(등록 1회)에서 최신값 읽을 ref.
+  const [dirty, setDirtyState] = useState(false);
+  const dirtyRef = useRef(false);
+  const setDirty = useCallback((v: boolean) => { dirtyRef.current = v; setDirtyState(v); }, []);
+  // 종료 확인 모달 + 종료 진행중 플래그(닫기 재요청 루프 방지).
+  const [closeConfirm, setCloseConfirm] = useState(false);
+  const closingRef = useRef(false);
 
   // 시작 시: 로컬 메타 로드 → 실제 설치 버전 조회 → 메타에 반영·저장(로컬 파일). 표시는 이 값 사용.
   useEffect(() => {
@@ -164,6 +171,7 @@ export function App() {
           st.showAlert(`${e?.message ?? e}`, { title: "Bruno 호환 저장 실패", kind: "err" });
         }
       }
+      setDirty(false); // 저장 성공 → 미저장 표시 해제
       if (silent) {
         setStatus(`자동 저장됨 · ${new Date().toLocaleTimeString()}`);
       } else {
@@ -180,13 +188,39 @@ export function App() {
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const unsub = useStore.subscribe((state: any, prev: any) => {
-      if (state.collections === prev.collections && state.chains === prev.chains) return;
+      const changed = state.collections !== prev.collections || state.chains !== prev.chains || state.environments !== prev.environments;
+      if (!changed) return;
       if (!useStore.getState().projectDir) return;
+      setDirty(true); // 변경 발생 → 미저장 표시(자동 저장이 곧 해제)
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = setTimeout(() => { void saveWorkspace(true); }, 2000);
     });
     return () => { unsub(); if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
-  }, [saveWorkspace]);
+  }, [saveWorkspace, setDirty]);
+
+  // 창 닫기 가로채기: 미저장 변경이 있으면 종료를 막고 확인 모달을 띄운다.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) =>
+        getCurrentWindow().onCloseRequested((event) => {
+          if (closingRef.current) return;      // 이미 종료 진행 중 → 그대로 닫힘
+          if (!dirtyRef.current) return;        // 변경 없음 → 그대로 닫힘
+          event.preventDefault();               // 종료 보류
+          setCloseConfirm(true);
+        })
+      )
+      .then((u) => { unlisten = u; })
+      .catch(() => { /* 웹 프리뷰 등 비-Tauri 환경 무시 */ });
+    return () => { unlisten?.(); };
+  }, []);
+
+  // 확인 모달 응답: 강제 종료(변경 폐기) / 저장 후 종료.
+  const destroyWindow = useCallback(async () => {
+    closingRef.current = true;
+    try { const { getCurrentWindow } = await import("@tauri-apps/api/window"); await getCurrentWindow().destroy(); }
+    catch { /* 비-Tauri 무시 */ }
+  }, []);
 
   // 단축키 디스패처: keybindings 레지스트리(사용자 커스터마이징 반영)로 command 매핑 후 실행.
   useEffect(() => {
@@ -432,6 +466,15 @@ export function App() {
         {projectDir && <button onClick={() => setShowImport(true)}>⬇ Import</button>}
         {projectDir && <button onClick={() => setShowExport(true)}>⬆ Export</button>}
         {projectDir && (
+          <button
+            className={dirty ? "savebtn dirty" : "savebtn"}
+            title={dirty ? "저장 안 된 변경이 있습니다 · 클릭 또는 Ctrl+S로 저장" : "모든 변경이 저장됨 (Ctrl+S)"}
+            onClick={() => saveWorkspace(false)}
+          >
+            {dirty ? "● 미저장" : "💾 저장됨"}
+          </button>
+        )}
+        {projectDir && (
           <>
             <button className="iconbtn" title="되돌리기 (Ctrl+Z)" disabled={!canUndo}
               onClick={() => { (useStore as any).temporal.getState().undo(); void useStore.getState().revalidate(); }}>↶</button>
@@ -587,6 +630,24 @@ export function App() {
                 onClick={() => { const ok = confirmDlg.onOk; setConfirmDlg(null); ok(); }}
               >
                 {confirmDlg.okLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {closeConfirm && (
+        <div className="modalbg" onClick={() => setCloseConfirm(false)}>
+          <div className="modal confirmmodal" onClick={(e) => e.stopPropagation()}>
+            <h3>저장하지 않고 종료할까요?</h3>
+            <p className="confirmmsg">저장되지 않은 변경 사항이 있습니다. 종료하면 마지막 저장 이후의 변경이 사라집니다.</p>
+            <div className="row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8 }}>
+              <button onClick={() => setCloseConfirm(false)}>취소</button>
+              <button className="danger" onClick={async () => { setCloseConfirm(false); await destroyWindow(); }}>
+                저장 안 함
+              </button>
+              <button className="active" onClick={async () => { setCloseConfirm(false); await saveWorkspace(false); await destroyWindow(); }}>
+                저장 후 종료
               </button>
             </div>
           </div>
