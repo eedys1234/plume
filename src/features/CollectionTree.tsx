@@ -92,6 +92,7 @@ export const CollectionTree = memo(function CollectionTree({
   const moveRequestTo = useStore((s) => s.moveRequestTo);
   const spec = specProp ?? storeSpec;
   const myColId = collectionId ?? activeColId;
+  const ignoredSet = useMemo(() => new Set<string>(spec?.["x-ignored"] ?? []), [spec]);
   const [dragFolder, setDragFolder] = useState<string | null>(null);
   // 드롭 시 요청을 대상 폴더로 이동.
   function onDropTo(e: React.DragEvent, folder: string) {
@@ -145,7 +146,7 @@ export const CollectionTree = memo(function CollectionTree({
     setMenu({ x: e.clientX, y: e.clientY, target });
   }
 
-  function renderChildren(node: FolderNode, depth: number) {
+  function renderChildren(node: FolderNode, depth: number, ancestorIgnored = false) {
     const subfolders = [...node.folders.values()].sort((a, b) =>
       sortDir === "desc" ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name)
     );
@@ -154,21 +155,23 @@ export const CollectionTree = memo(function CollectionTree({
       <>
         {subfolders.map((f) => {
           const isOpen = q ? true : !collapsed.has(f.path);
+          const fIgnored = ancestorIgnored || ignoredSet.has(f.path);
           return (
             <div key={f.path}>
               <div
-                className={dragFolder === f.path ? "treerow folder dropover" : "treerow folder"}
+                className={(dragFolder === f.path ? "treerow folder dropover" : "treerow folder") + (fIgnored ? " ignored" : "")}
                 style={{ paddingLeft: depth * 14 }}
                 onClick={() => toggle(f.path)}
                 onContextMenu={(e) => open(e, { kind: "folder", path: f.path })}
                 onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragFolder(f.path); }}
                 onDragLeave={() => setDragFolder((cur) => (cur === f.path ? null : cur))}
                 onDrop={(e) => onDropTo(e, f.path)}
+                title={fIgnored ? "무시된 폴더 (실행에서 제외)" : undefined}
               >
                 <span className="caret">{isOpen ? "▾" : "▸"}</span>
-                📁 {f.name}
+                📁 {f.name}{fIgnored ? " 🚫" : ""}
               </div>
-              {isOpen && renderChildren(f, depth + 1)}
+              {isOpen && renderChildren(f, depth + 1, fIgnored)}
             </div>
           );
         })}
@@ -184,9 +187,9 @@ export const CollectionTree = memo(function CollectionTree({
               e.dataTransfer.effectAllowed = "move";
             }}
             className={
-              isActive && selected?.path === path && selected?.method === method
+              (isActive && selected?.path === path && selected?.method === method
                 ? "treerow request sel"
-                : "treerow request"
+                : "treerow request") + (ancestorIgnored ? " ignored" : "")
             }
             style={{ paddingLeft: depth * 14 + 14 }}
             onClick={() => onSelectRequest(path, method, op)}

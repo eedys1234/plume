@@ -88,6 +88,8 @@ interface AppState {
   setProjectRoot: (d: string | null) => void;
   openRootRequest: string | null;          // 다른 폴더(예: git worktree)를 루트로 열어달라는 요청 신호
   requestOpenRoot: (path: string) => void;
+  runFolderRequest: string | null;         // Run(부하) 탭에서 이 폴더를 선택해 실행 준비하라는 신호
+  requestRunFolder: (folder: string) => void;
   recentRoots: string[];                    // 최근 프로젝트 폴더
   addRecentRoot: (path: string) => void;
   removeRecentRoot: (path: string) => void;
@@ -163,6 +165,8 @@ interface AppState {
   copyRequest: (path: string, method: string) => void;
   copyFolder: (folderPath: string) => void;
   pasteInto: (targetFolder: string) => void;
+  cloneFolder: (folderPath: string) => void;        // 폴더(+하위)를 같은 위치에 '<이름> copy' 로 복제
+  toggleIgnoreFolder: (folderPath: string) => void; // 폴더 무시 토글(x-ignored) — 실행/트리 표시에서 제외
 
   // 요청 탭 (Bruno식 multi-open)
   openTabs: { path: string; method: string }[];
@@ -247,6 +251,8 @@ export const useStore = create<AppState>()(
   setProjectRoot: (d) => set({ projectRoot: d }),
   openRootRequest: null,
   requestOpenRoot: (path) => set({ openRootRequest: path }),
+  runFolderRequest: null,
+  requestRunFolder: (folder) => set({ runFolderRequest: folder }),
   recentRoots: loadRecentRoots(),
   addRecentRoot: (path) =>
     set((s) => {
@@ -570,6 +576,51 @@ export const useStore = create<AppState>()(
           d.paths[np][r.method] = op;
         }
       }
+    });
+  },
+  cloneFolder: (folderPath) => {
+    const base = folderPath;
+    const parent = base.includes("/") ? base.slice(0, base.lastIndexOf("/")) : "";
+    const name = base.split("/").pop() || base;
+    // 원본 폴더(+하위)의 요청 스냅샷(드래프트 밖에서 플레인 복제).
+    const srcReqs = listOperations(get().spec)
+      .filter(({ op }) => { const f = opFolder(op); return f === base || f.startsWith(base + "/"); })
+      .map(({ path, method, op }) => ({ path, method, op: structuredClone(op) }));
+    get().updateSpec((d) => {
+      d.paths ??= {};
+      // 중복 회피용 현재 폴더 집합.
+      const folderSet = new Set<string>(d["x-folders"] ?? []);
+      for (const p of Object.keys(d.paths)) for (const m of Object.keys(d.paths[p])) { const f = d.paths[p][m]?.["x-folder"]; if (f) folderSet.add(f); }
+      const makePath = (n: string) => (parent ? `${parent}/${n}` : n);
+      let newName = `${name} copy`, i = 2;
+      while (folderSet.has(makePath(newName))) newName = `${name} copy ${i++}`;
+      const newBase = makePath(newName);
+      const exists = (p: string, m: string) => !!d.paths[p]?.[m];
+      const uniquePath = (p: string, m: string) => {
+        if (!exists(p, m)) return p;
+        let k = 1;
+        while (exists(`${p}-copy${k > 1 ? k : ""}`, m)) k++;
+        return `${p}-copy${k > 1 ? k : ""}`;
+      };
+      const addFolder = (f: string) => { if (f) d["x-folders"] = [...new Set([...(d["x-folders"] ?? []), f])].sort(); };
+      addFolder(newBase); // 빈 폴더도 복제되도록
+      for (const r of srcReqs) {
+        const op = r.op; // 이미 plain clone
+        const oldF: string = op["x-folder"] ?? "";
+        op["x-folder"] = oldF === base ? newBase : newBase + oldF.slice(base.length);
+        addFolder(op["x-folder"]);
+        const np = uniquePath(r.path, r.method);
+        d.paths[np] ??= {};
+        d.paths[np][r.method] = op;
+      }
+    });
+  },
+  toggleIgnoreFolder: (folderPath) => {
+    get().updateSpec((d) => {
+      const cur: string[] = d["x-ignored"] ?? [];
+      d["x-ignored"] = cur.includes(folderPath)
+        ? cur.filter((f: string) => f !== folderPath)
+        : [...cur, folderPath].sort();
     });
   },
     }),

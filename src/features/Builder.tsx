@@ -29,17 +29,18 @@ function remap(f: string, oldP: string, newP: string): string {
 
 export function Builder() {
   const {
-    spec, updateSpec, diagnostics, clipboard, copyRequest, copyFolder, pasteInto,
+    spec, updateSpec, diagnostics, clipboard, copyRequest, copyFolder, pasteInto, cloneFolder, toggleIgnoreFolder,
     collections, activeCollectionId, setActiveCollection, addCollection, removeCollection,
-    environments, activeEnvId, setActiveEnv,
+    environments, activeEnvId, setActiveEnv, setBuilderTab, requestRunFolder,
     openTabs, activeTab, openTab, closeTab, setActiveTab, closeAllTabs, closeOtherTabs, closeTabsToSide, projectDir, logEvent,
   } = useStore(
     useShallow((s) => ({
       spec: s.spec, updateSpec: s.updateSpec, diagnostics: s.diagnostics, clipboard: s.clipboard,
-      copyRequest: s.copyRequest, copyFolder: s.copyFolder, pasteInto: s.pasteInto,
+      copyRequest: s.copyRequest, copyFolder: s.copyFolder, pasteInto: s.pasteInto, cloneFolder: s.cloneFolder, toggleIgnoreFolder: s.toggleIgnoreFolder,
       collections: s.collections, activeCollectionId: s.activeCollectionId, setActiveCollection: s.setActiveCollection,
       addCollection: s.addCollection, removeCollection: s.removeCollection,
       environments: s.environments, activeEnvId: s.activeEnvId, setActiveEnv: s.setActiveEnv,
+      setBuilderTab: s.setBuilderTab, requestRunFolder: s.requestRunFolder,
       openTabs: s.openTabs, activeTab: s.activeTab, openTab: s.openTab, closeTab: s.closeTab,
       setActiveTab: s.setActiveTab, closeAllTabs: s.closeAllTabs, closeOtherTabs: s.closeOtherTabs, closeTabsToSide: s.closeTabsToSide,
       projectDir: s.projectDir, logEvent: s.logEvent,
@@ -161,15 +162,19 @@ export function Builder() {
       return items;
     }
     if (t.kind === "folder") {
+      const isIgnored = new Set<string>(cspec?.["x-ignored"] ?? []).has(t.path);
       const items: TreeMenuItem[] = [
+        { label: "▶ 실행 (Run)", run: () => { sel(); requestRunFolder(t.path); setBuilderTab("load"); } },
         { label: "＋ 새 하위 폴더", run: () => { sel(); setDialog({ kind: "newFolder", parent: t.path }); } },
         { label: "＋ 새 요청", run: () => { sel(); setDialog({ kind: "newRequest", folder: t.path }); } },
+        { label: "⧉ 복제 (Clone)", run: () => { sel(); cloneFolder(t.path); logEvent("Builder", `폴더 복제 · ${t.path}`); } },
         { label: "복사", run: () => { sel(); copyFolder(t.path); } },
       ];
       if (clipboard) items.push({ label: "📋 붙여넣기", run: () => { sel(); pasteInto(t.path); } });
       items.push({ label: "이름 변경", run: () => { sel(); setDialog({ kind: "renameFolder", path: t.path, current: t.path.split("/").pop() ?? "" }); } });
       items.push({ label: "⚙ Pre/Post 스크립트", run: () => { sel(); setScriptEdit({ colId, scope: "folder", folder: t.path }); } });
-      items.push({ label: "삭제", run: () => { sel(); deleteFolder(t.path); } });
+      items.push({ label: isIgnored ? "🚫 무시 해제" : "🚫 무시 (Ignore)", run: () => { sel(); toggleIgnoreFolder(t.path); } });
+      items.push({ label: "🗑 삭제", run: () => { sel(); deleteFolder(t.path); } });
       return items;
     }
     return [
@@ -213,7 +218,7 @@ export function Builder() {
   // (1) 최신 menuFor 로직은 ref로 접근하고 (2) 래퍼 신원은 col.id 집합이 바뀔 때만 재생성한다.
   const menuForRef = useRef(menuFor);
   menuForRef.current = menuFor;
-  const colIdKey = collections.map((c) => c.id).join(" ");
+  const colIdKey = collections.map((c) => c.id).join(" ");
   const treeCbs = useMemo(() => {
     const map: Record<string, { onSelectRequest: (p: string, m: string) => void; menuFor: (t: Target) => TreeMenuItem[] }> = {};
     for (const col of collections) {

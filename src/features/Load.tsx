@@ -1,5 +1,5 @@
 // 부하 테스트 탭. 단일 요청 · 폴더 그룹 · 커스텀 선택(여러 폴더의 요청 체크) 3가지 모드.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type BodySpec, type HttpRequestSpec, type LoadResult } from "../ipc";
 import { listOperations, opFolder, specFolders, tabKey, useStore } from "../store";
 import { useShallow } from "zustand/react/shallow";
@@ -22,8 +22,17 @@ export function Load() {
     useShallow((s) => ({ activeEnv: s.activeEnv, spec: s.spec, logEvent: s.logEvent }))
   );
   const showAlert = useStore((s) => s.showAlert);
+  const runFolderRequest = useStore((s) => s.runFolderRequest);
   const [mode, setMode] = useState<"single" | "folder" | "custom">("single");
   const [folder, setFolder] = useState("");
+
+  // 트리에서 폴더 '▶ 실행'으로 넘어오면: 폴더 모드로 전환 + 해당 폴더 선택(신호 소비).
+  useEffect(() => {
+    if (runFolderRequest == null) return;
+    setMode("folder");
+    setFolder(runFolderRequest);
+    useStore.setState({ runFolderRequest: null });
+  }, [runFolderRequest]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 단일
   const [method, setMethod] = useState("GET");
@@ -38,7 +47,12 @@ export function Load() {
   const [msg, setMsg] = useState("");
 
   // 전체 스펙 순회는 무겁다(수천 오퍼레이션) → spec이 바뀔 때만 계산(입력창 타이핑엔 재계산 X).
-  const allOps = useMemo(() => listOperations(spec), [spec]);
+  // 무시(x-ignored)된 폴더의 요청은 실행 대상에서 제외.
+  const allOps = useMemo(() => {
+    const ignored: string[] = spec?.["x-ignored"] ?? [];
+    const isIgnored = (f: string) => ignored.some((ig) => f === ig || f.startsWith(ig + "/"));
+    return listOperations(spec).filter(({ op }) => !isIgnored(opFolder(op)));
+  }, [spec]);
   const folders = useMemo(() => specFolders(spec), [spec]);
 
   function parseHeaders(): Record<string, string> {

@@ -424,6 +424,8 @@ kbd {
 .treerow.collection { font-weight: 700; color: var(--text); padding: 6px; }
 .treerow .p { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
 .treerow.sel .p { color: var(--text); }
+/* 무시(ignore)된 폴더/요청: 흐리게 + 취소선 */
+.treerow.ignored { opacity: 0.45; text-decoration: line-through; text-decoration-color: var(--text-faint); }
 .caret { width: 12px; display: inline-block; text-align: center; color: var(--text-faint); font-size: 10px; }
 .caret:hover { color: var(--text); }
 
