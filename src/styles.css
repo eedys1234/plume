@@ -420,7 +420,11 @@ kbd {
   white-space: nowrap; transition: background 0.1s; position: relative;
 }
 .treerow:hover { background: var(--surface-2); }
+.treerow { user-select: none; }
 .treerow.sel { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+/* 멀티 선택(Shift/Ctrl 범위 선택) 강조 — 단일 활성(sel)과 구분되게 진한 틴트 + 좌측 바 */
+.treerow.request.multisel { background: color-mix(in srgb, var(--accent) 20%, var(--surface-2)); box-shadow: inset 3px 0 0 var(--accent); }
+.treerow.request.multisel .p { color: var(--text); }
 .treerow.collection { font-weight: 700; color: var(--text); padding: 6px; }
 .treerow .p { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
 .treerow.sel .p { color: var(--text); }

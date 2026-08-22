@@ -90,15 +90,29 @@ export const CollectionTree = memo(function CollectionTree({
   const storeSpec = useStore((s) => s.spec);
   const activeColId = useStore((s) => s.activeCollectionId);
   const moveRequestTo = useStore((s) => s.moveRequestTo);
+  const moveRequestsTo = useStore((s) => s.moveRequestsTo);
   const spec = specProp ?? storeSpec;
   const myColId = collectionId ?? activeColId;
   const ignoredSet = useMemo(() => new Set<string>(spec?.["x-ignored"] ?? []), [spec]);
   const [dragFolder, setDragFolder] = useState<string | null>(null);
-  // 드롭 시 요청을 대상 폴더로 이동.
+  // 멀티 선택(Shift 범위 · Ctrl/⌘ 토글). 키 = `${method} ${path}`. 트리 인스턴스별로 독립.
+  const [selKeys, setSelKeys] = useState<Set<string>>(new Set());
+  const [anchor, setAnchor] = useState<string | null>(null);
+  const reqKey = (path: string, method: string) => `${method} ${path}`;
+  // 드롭 시 요청을 대상 폴더로 이동. 멀티 선택(x-plume-reqs)이 있으면 전부, 없으면 단일.
   function onDropTo(e: React.DragEvent, folder: string) {
     e.preventDefault();
     e.stopPropagation();
     setDragFolder(null);
+    const rawMulti = e.dataTransfer.getData("application/x-plume-reqs");
+    if (rawMulti) {
+      try {
+        const d = JSON.parse(rawMulti);
+        const items = Array.isArray(d.items) ? d.items : [];
+        if (items.length) { moveRequestsTo(d.col, items, myColId, folder); setSelKeys(new Set()); setAnchor(null); }
+      } catch { /* 무시 */ }
+      return;
+    }
     const raw = e.dataTransfer.getData("application/x-plume-req");
     if (!raw) return;
     try {
@@ -146,6 +160,48 @@ export const CollectionTree = memo(function CollectionTree({
     setMenu({ x: e.clientX, y: e.clientY, target });
   }
 
+  // 화면에 보이는 요청들을 렌더 순서(폴더 먼저→요청)대로 평탄화 → Shift 범위 선택 기준.
+  const visibleKeys = useMemo(() => {
+    const isOpen = (p: string) => (q ? true : !collapsed.has(p));
+    const out: string[] = [];
+    const walk = (node: FolderNode) => {
+      const subs = [...node.folders.values()].sort((a, b) =>
+        sortDir === "desc" ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name)
+      );
+      for (const f of subs) if (isOpen(f.path)) walk(f);
+      for (const r of sortRequests(node.requests, sortField, sortDir)) out.push(reqKey(r.path, r.method));
+    };
+    walk(tree);
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tree, collapsed, sortField, sortDir, q]);
+
+  // 요청 클릭: 일반=단일 선택+탭 열기 / Shift=범위(누적) / Ctrl·⌘=개별 토글.
+  function onRequestClick(e: React.MouseEvent, path: string, method: string, op: any) {
+    const key = reqKey(path, method);
+    if (e.shiftKey) {
+      e.preventDefault();
+      const ai = anchor ? visibleKeys.indexOf(anchor) : -1;
+      const ki = visibleKeys.indexOf(key);
+      if (ai === -1 || ki === -1) {
+        setSelKeys((p) => new Set(p).add(key));
+      } else {
+        const [lo, hi] = ai <= ki ? [ai, ki] : [ki, ai];
+        setSelKeys((prev) => { const n = new Set(prev); for (let i = lo; i <= hi; i++) n.add(visibleKeys[i]); return n; });
+      }
+      setAnchor(key);
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      setSelKeys((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+      setAnchor(key);
+      return;
+    }
+    setSelKeys(new Set([key]));
+    setAnchor(key);
+    onSelectRequest(path, method, op);
+  }
+
   function renderChildren(node: FolderNode, depth: number, ancestorIgnored = false) {
     const subfolders = [...node.folders.values()].sort((a, b) =>
       sortDir === "desc" ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name)
@@ -175,31 +231,38 @@ export const CollectionTree = memo(function CollectionTree({
             </div>
           );
         })}
-        {requests.map(({ path, method, op }) => (
+        {requests.map(({ path, method, op }) => {
+          const key = reqKey(path, method);
+          const isSel = selKeys.has(key);
+          return (
           <div
-            key={`${method} ${path}`}
+            key={key}
             draggable
             onDragStart={(e) => {
-              e.dataTransfer.setData(
-                "application/x-plume-req",
-                JSON.stringify({ col: myColId, path, method, folder: op?.["x-folder"] ?? "" })
-              );
+              // 선택에 포함된 여러 항목을 드래그하면 전부, 아니면 이 항목만.
+              if (isSel && selKeys.size > 1) {
+                const items = [...selKeys].map((k) => { const i = k.indexOf(" "); return { method: k.slice(0, i), path: k.slice(i + 1) }; });
+                e.dataTransfer.setData("application/x-plume-reqs", JSON.stringify({ col: myColId, items }));
+              } else {
+                e.dataTransfer.setData("application/x-plume-req", JSON.stringify({ col: myColId, path, method, folder: op?.["x-folder"] ?? "" }));
+              }
               e.dataTransfer.effectAllowed = "move";
             }}
             className={
               (isActive && selected?.path === path && selected?.method === method
                 ? "treerow request sel"
-                : "treerow request") + (ancestorIgnored ? " ignored" : "")
+                : "treerow request") + (ancestorIgnored ? " ignored" : "") + (isSel ? " multisel" : "")
             }
             style={{ paddingLeft: depth * 14 + 14 }}
-            onClick={() => onSelectRequest(path, method, op)}
+            onClick={(e) => onRequestClick(e, path, method, op)}
             onContextMenu={(e) => open(e, { kind: "request", path, method })}
             title={path}
           >
             <span className={`m m-${method}`}>{method.toUpperCase()}</span>
             <span className="p">{op?.summary || path}</span>
           </div>
-        ))}
+          );
+        })}
       </>
     );
   }

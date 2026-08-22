@@ -102,6 +102,8 @@ interface AppState {
   addCollection: (name: string) => void;
   setActiveCollection: (id: string) => void;
   moveRequestTo: (srcColId: string, path: string, method: string, dstColId: string, dstFolder: string) => void;
+  /** 여러 요청을 한 번에 대상 폴더로 이동(멀티 선택 DnD). 한 번의 갱신·검증으로 처리. */
+  moveRequestsTo: (srcColId: string, items: { path: string; method: string }[], dstColId: string, dstFolder: string) => void;
   renameCollection: (id: string, name: string) => void;
   removeCollection: (id: string) => void;
   /** 워크스페이스에서 로드한 컬렉션들로 전체 교체(비면 기본 1개 생성). */
@@ -311,6 +313,42 @@ export const useStore = create<AppState>()(
         const moved = structuredClone(op);
         if (dstFolder) moved["x-folder"] = dstFolder; else delete moved["x-folder"];
         dstSpec.paths[path][method] = moved;
+        dst.spec = dstSpec;
+      }
+      const active = cols.find((c) => c.id === s.activeCollectionId);
+      return { collections: cols, spec: active ? active.spec : s.spec };
+    });
+    void get().revalidate();
+  },
+  moveRequestsTo: (srcColId, items, dstColId, dstFolder) => {
+    if (!items.length) return;
+    set((s) => {
+      const cols = s.collections.map((c) => ({ ...c }));
+      const src = cols.find((c) => c.id === srcColId);
+      const dst = cols.find((c) => c.id === dstColId);
+      if (!src || !dst) return {};
+      const srcSpec: any = structuredClone(src.spec);
+      if (srcColId === dstColId) {
+        for (const { path, method } of items) {
+          const op = srcSpec?.paths?.[path]?.[method];
+          if (!op) continue;
+          if (dstFolder) op["x-folder"] = dstFolder; else delete op["x-folder"];
+        }
+        src.spec = srcSpec;
+      } else {
+        const dstSpec: any = structuredClone(dst.spec);
+        dstSpec.paths ??= {};
+        for (const { path, method } of items) {
+          const op = srcSpec?.paths?.[path]?.[method];
+          if (!op) continue;
+          const moved = structuredClone(op);
+          if (dstFolder) moved["x-folder"] = dstFolder; else delete moved["x-folder"];
+          delete srcSpec.paths[path][method];
+          if (Object.keys(srcSpec.paths[path]).length === 0) delete srcSpec.paths[path];
+          dstSpec.paths[path] ??= {};
+          dstSpec.paths[path][method] = moved;
+        }
+        src.spec = srcSpec;
         dst.spec = dstSpec;
       }
       const active = cols.find((c) => c.id === s.activeCollectionId);
