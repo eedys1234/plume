@@ -910,6 +910,19 @@ details > summary:hover { color: var(--text); }
 .copybtn:hover { color: var(--text); border-color: var(--accent); }
 .copybtn.done { color: var(--ok); border-color: var(--ok); }
 .copybtn svg { display: block; }
+/* Info 문서 에디터(게시판식 Markdown + Rich Text 토글) */
+.doceditor { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+.doctoolbar { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; padding: 5px 6px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.doctoolbar > button { min-width: 28px; height: 26px; padding: 0 7px; font-size: 12px; border: 1px solid transparent; background: transparent; color: var(--text-dim); border-radius: 5px; cursor: pointer; }
+.doctoolbar > button:hover { background: var(--surface); color: var(--text); border-color: var(--line); }
+.docsep { width: 1px; height: 16px; background: var(--line); margin: 0 4px; }
+.doctoolbar .spacer { flex: 1; }
+.docmodetoggle { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.docmodetoggle button { padding: 3px 10px; font-size: 11px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; }
+.docmodetoggle button.active { background: var(--accent-soft); color: var(--accent-hover); font-weight: 600; }
+.docedit { width: 100%; border: none; border-radius: 0; resize: vertical; min-height: 180px; padding: 12px; font-family: var(--mono); font-size: 12.5px; line-height: 1.6; background: var(--surface); color: var(--text); }
+.docedit:focus { outline: none; }
+.docpreview { min-height: 180px; max-height: 460px; padding: 14px 18px; }
 .mdpreview { padding: 20px 24px; overflow: auto; }
 .mdpreview h1 { font-size: 22px; }
 .mdpreview table { border-collapse: collapse; margin: 8px 0; }

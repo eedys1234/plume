@@ -7,6 +7,7 @@ import { useShallow } from "zustand/react/shallow";
 import { runScript, runTests, type BruApi, type TestResult } from "../script";
 import { isCommand } from "../keybindings";
 import { SchemaEditor } from "./SchemaEditor";
+import { DocEditor } from "./DocEditor";
 import { ParamsEditor } from "./ParamsEditor";
 import { ExamplesEditor } from "./ExamplesEditor";
 import { Resizer, usePersistedSize } from "./Resizer";
@@ -759,8 +760,12 @@ export function RequestView({ path, method }: { path: string; method: string }) 
         {sub === "info" && (
           <div>
             <label>summary<input value={op.summary ?? ""} onChange={(e) => edit((o) => (o.summary = e.target.value))} /></label>
-            <label>description<textarea rows={3} value={op.description ?? ""} onChange={(e) => edit((o) => (o.description = e.target.value))} /></label>
-            <div className="sublabel">tags (검색 키워드로도 사용됨)</div>
+            <div className="sublabel">문서 (Docs · Markdown · 게시판식 서식)</div>
+            <DocEditor
+              value={op.description ?? ""}
+              onChange={(v) => edit((o) => { if (v) o.description = v; else delete o.description; })}
+            />
+            <div className="sublabel" style={{ marginTop: 10 }}>tags (검색 키워드로도 사용됨)</div>
             <div className="tagsbox">
               {(op.tags ?? []).map((t: string, i: number) => (
                 <span key={i} className="tagchip">
