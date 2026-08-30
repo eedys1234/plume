@@ -10,9 +10,11 @@
 //! - 검증: [`validate::validate`]
 //! - Import/Export: [`import_spec`] / [`export_spec`]
 
+pub mod ai;
 pub mod bru;
 pub mod deploy;
 pub mod error;
+pub mod mcp;
 pub mod git;
 pub mod http;
 pub mod load;

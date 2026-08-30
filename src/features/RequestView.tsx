@@ -8,6 +8,7 @@ import { runScript, runTests, type BruApi, type TestResult } from "../script";
 import { isCommand } from "../keybindings";
 import { SchemaEditor } from "./SchemaEditor";
 import { DocEditor } from "./DocEditor";
+import { callAI } from "./aiConfig";
 import { ParamsEditor } from "./ParamsEditor";
 import { ExamplesEditor } from "./ExamplesEditor";
 import { Resizer, usePersistedSize } from "./Resizer";
@@ -764,6 +765,14 @@ export function RequestView({ path, method }: { path: string; method: string }) 
             <DocEditor
               value={op.description ?? ""}
               onChange={(v) => edit((o) => { if (v) o.description = v; else delete o.description; })}
+              aiDraft={async () => {
+                const body = op.requestBody?.content ? JSON.stringify(op.requestBody.content, null, 2).slice(0, 1500) : "";
+                const ctx = `HTTP ${method.toUpperCase()} ${path}\nsummary: ${op.summary ?? "(없음)"}\n`
+                  + (params.length ? `params: ${params.map((p: any) => `${p.in}:${p.name}`).join(", ")}\n` : "")
+                  + (body ? `requestBody:\n${body}\n` : "");
+                const sys = "You write concise REST API endpoint documentation in Korean using GitHub-Flavored Markdown. Include a short description, a parameter/header table when applicable, and a brief request/response example. Output Markdown only — no code fences around the whole thing.";
+                return callAI(`다음 API 요청에 대한 문서를 작성해줘.\n\n${ctx}`, sys);
+              }}
             />
             <div className="sublabel" style={{ marginTop: 10 }}>tags (검색 키워드로도 사용됨)</div>
             <div className="tagsbox">

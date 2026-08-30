@@ -237,6 +237,19 @@ export const api = {
     invoke<void>("save_workspace_collections", { wsDir, collections }),
   loadWorkspaceCollections: (wsDir: string) =>
     invoke<{ name: string; spec: Spec }[]>("load_workspace_collections", { wsDir }),
+  // 멀티 제공자 LLM 채팅 완성(Ollama · OpenAI · Anthropic).
+  aiComplete: (args: {
+    provider: "ollama" | "openai" | "anthropic";
+    baseUrl?: string; apiKey?: string; model: string; system?: string; prompt: string;
+  }) => invoke<string>("ai_complete", { args: {
+    provider: args.provider, base_url: args.baseUrl ?? "", api_key: args.apiKey ?? "",
+    model: args.model, system: args.system ?? "", prompt: args.prompt,
+  } }),
+  // MCP 서버(stdio) 연결 → 노출 도구 목록(선택 통합).
+  mcpListTools: (server: { transport?: string; command: string; args?: string[]; env?: [string, string][] }) =>
+    invoke<{ name: string; description: string }[]>("mcp_list_tools", { server: {
+      transport: server.transport ?? "stdio", command: server.command, args: server.args ?? [], env: server.env ?? [],
+    } }),
   // 각 컬렉션을 Bruno 포맷(<ws>/bruno/<이름>/)으로도 내보내 Bruno 앱에서 열 수 있게 한다.
   exportWorkspaceBruno: (wsDir: string, collections: { name: string; spec: Spec }[]) =>
     invoke<string>("export_workspace_bruno", { wsDir, collections }),

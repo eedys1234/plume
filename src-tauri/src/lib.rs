@@ -134,6 +134,8 @@ pub fn run() {
             commands::git_worktree_add,
             commands::git_worktree_remove,
             commands::git_worktree_prune,
+            commands::ai_complete,
+            commands::mcp_list_tools,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 앱 실행 중 오류");

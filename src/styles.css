@@ -910,12 +910,17 @@ details > summary:hover { color: var(--text); }
 .copybtn:hover { color: var(--text); border-color: var(--accent); }
 .copybtn.done { color: var(--ok); border-color: var(--ok); }
 .copybtn svg { display: block; }
+/* MCP 서버 행 */
+.mcprow { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; background: var(--surface-2); }
 /* Info 문서 에디터(게시판식 Markdown + Rich Text 토글) */
 .doceditor { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
 .doctoolbar { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; padding: 5px 6px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
 .doctoolbar > button { min-width: 28px; height: 26px; padding: 0 7px; font-size: 12px; border: 1px solid transparent; background: transparent; color: var(--text-dim); border-radius: 5px; cursor: pointer; }
 .doctoolbar > button:hover { background: var(--surface); color: var(--text); border-color: var(--line); }
 .docsep { width: 1px; height: 16px; background: var(--line); margin: 0 4px; }
+.docai { height: 26px; padding: 0 10px; margin-left: 4px; font-size: 11px; font-weight: 600; color: var(--bg); background: linear-gradient(180deg, var(--accent), var(--accent-2)); border: none; border-radius: 5px; cursor: pointer; }
+.docai:disabled { opacity: 0.6; cursor: default; }
+.docaierr { padding: 6px 10px; font-size: 11px; color: #d98324; background: color-mix(in srgb, #d98324 12%, var(--surface-2)); border-bottom: 1px solid var(--line); }
 .doctoolbar .spacer { flex: 1; }
 .docmodetoggle { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .docmodetoggle button { padding: 3px 10px; font-size: 11px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; }

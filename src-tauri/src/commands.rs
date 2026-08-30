@@ -717,6 +717,20 @@ pub fn git_worktree_prune(dir: String) -> CmdResult<String> {
     Ok(core::git::worktree_prune(Path::new(&dir))?)
 }
 
+// ─────────────────────────── AI(LLM) · MCP ───────────────────────────
+
+/// 멀티 제공자 LLM 채팅 완성(Ollama · OpenAI · Anthropic). 응답 텍스트 반환.
+#[tauri::command]
+pub fn ai_complete(args: core::ai::AiChatArgs) -> CmdResult<String> {
+    Ok(core::ai::ai_complete(args)?)
+}
+
+/// MCP 서버(stdio)에 연결해 노출된 도구 목록을 가져온다(선택 통합 · 연결 확인용).
+#[tauri::command]
+pub fn mcp_list_tools(server: core::mcp::McpServer) -> CmdResult<Vec<core::mcp::McpTool>> {
+    Ok(core::mcp::list_tools(server)?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

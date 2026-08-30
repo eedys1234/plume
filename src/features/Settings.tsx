@@ -7,6 +7,11 @@ import { useShallow } from "zustand/react/shallow";
 import { loadDeploy, saveDeploy, clearCreds, emptyDeploy, type DeploySettings } from "./deployConfig";
 import { loadMeta, saveMeta, defaultMeta, type AppMeta } from "../appMeta";
 import { COMMANDS, effectiveCombo, comboTokens, setBinding, resetBinding, resetAll, eventToCombo, comboToString } from "../keybindings";
+import { api } from "../ipc";
+import {
+  loadAi, saveAi, type AiSettings, type AiProvider, PROVIDER_LABELS, DEFAULT_MODELS, DEFAULT_BASEURL,
+  loadMcp, saveMcp, type McpServerCfg,
+} from "./aiConfig";
 
 export function Settings() {
   const { projectDir, showToast } = useStore(
@@ -17,8 +22,16 @@ export function Settings() {
   const [meta, setMeta] = useState<AppMeta>(defaultMeta());
   const [recId, setRecId] = useState<string | null>(null); // 녹화 중인 command id
   const [bindVer, setBindVer] = useState(0); // 바인딩 변경 후 재렌더용
-  const [tab, setTab] = useState<"deploy" | "update" | "save" | "keys">("deploy");
+  const [tab, setTab] = useState<"deploy" | "update" | "ai" | "mcp" | "save" | "keys">("deploy");
   const [brunoCompat, setBrunoCompat] = useState(() => localStorage.getItem("plume.brunoCompat") === "1");
+  // AI(LLM) 설정 + MCP 서버
+  const [ai, setAi] = useState<AiSettings>(() => loadAi());
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMsg, setAiMsg] = useState("");
+  const [showAiKey, setShowAiKey] = useState(false);
+  const [mcp, setMcp] = useState<McpServerCfg[]>(() => loadMcp());
+  const [mcpBusy, setMcpBusy] = useState<string | null>(null);
+  const [mcpResult, setMcpResult] = useState<Record<string, string>>({});
 
   // 녹화: recId 설정되면 다음 키 입력을 캡처해 바인딩. Esc=취소.
   useEffect(() => {
@@ -63,13 +76,45 @@ export function Settings() {
 
   const hasCreds = cfg.accessKeyId.trim() && cfg.secretAccessKey.trim();
 
+  // ── AI(LLM) ──
+  const setAiF = (patch: Partial<AiSettings>) => setAi((a) => { const n = { ...a, ...patch }; saveAi(n); return n; });
+  const changeProvider = (p: AiProvider) => setAiF({ provider: p, model: DEFAULT_MODELS[p], baseUrl: "" });
+  async function testAi() {
+    setAiBusy(true); setAiMsg("");
+    try {
+      const out = await api.aiComplete({
+        provider: ai.provider, baseUrl: ai.baseUrl, apiKey: ai.apiKey, model: ai.model,
+        system: "You are a terse assistant.", prompt: "한 단어로만 답하세요: 연결 테스트 성공했으면 'OK'.",
+      });
+      setAiMsg(`✓ 연결 성공 · 응답: ${out.trim().slice(0, 80) || "(빈 응답)"}`);
+    } catch (e: any) {
+      setAiMsg(`✗ 실패: ${e?.message ?? e}`);
+    } finally { setAiBusy(false); }
+  }
+
+  // ── MCP ──
+  const setMcpList = (list: McpServerCfg[]) => { setMcp(list); saveMcp(list); };
+  const addMcp = () => setMcpList([...mcp, { id: `mcp${Date.now()}`, name: "새 MCP 서버", command: "npx", args: "-y @modelcontextprotocol/server-everything" }]);
+  const patchMcp = (id: string, patch: Partial<McpServerCfg>) => setMcpList(mcp.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  const removeMcp = (id: string) => { setMcpList(mcp.filter((s) => s.id !== id)); setMcpResult((r) => { const n = { ...r }; delete n[id]; return n; }); };
+  async function testMcp(s: McpServerCfg) {
+    setMcpBusy(s.id);
+    setMcpResult((r) => ({ ...r, [s.id]: "연결 중…" }));
+    try {
+      const tools = await api.mcpListTools({ command: s.command, args: s.args.trim() ? s.args.trim().split(/\s+/) : [] });
+      setMcpResult((r) => ({ ...r, [s.id]: `✓ 도구 ${tools.length}개: ${tools.map((t) => t.name).join(", ") || "(없음)"}` }));
+    } catch (e: any) {
+      setMcpResult((r) => ({ ...r, [s.id]: `✗ ${e?.message ?? e}` }));
+    } finally { setMcpBusy(null); }
+  }
+
   return (
     <div className="settings">
       <div className="settingsinner">
         <h2>⚙ Settings</h2>
 
         <div className="settingtabs">
-          {([["deploy", "☁ 배포"], ["update", "⬆ 업데이트"], ["save", "🗂 저장"], ["keys", "⌨ 단축키"]] as const).map(([id, label]) => (
+          {([["deploy", "☁ 배포"], ["update", "⬆ 업데이트"], ["ai", "🤖 AI"], ["mcp", "🔌 MCP"], ["save", "🗂 저장"], ["keys", "⌨ 단축키"]] as const).map(([id, label]) => (
             <button key={id} className={tab === id ? "stab active" : "stab"} onClick={() => setTab(id)}>{label}</button>
           ))}
         </div>
@@ -175,6 +220,85 @@ export function Settings() {
             </label>
           </div>
           <p className="hint tiny" style={{ marginTop: 6 }}>확인 대상: <code>github.com/{meta.owner || "…"}/{meta.repo || "…"}/releases/latest</code></p>
+        </section>
+        )}
+
+        {tab === "ai" && (
+        <section className="settingsec">
+          <h3>🤖 AI 연동 (LLM)</h3>
+          <p className="hint tiny">
+            로컬 <b>Ollama</b> 또는 <b>OpenAI(ChatGPT)</b> · <b>Anthropic(Claude)</b> API에 연결합니다.
+            요청은 백엔드에서 호출되어 CORS가 없고, 설정·키는 이 기기(localStorage)에만 저장됩니다.
+          </p>
+          <div className="settinggrid">
+            <label>
+              제공자
+              <select value={ai.provider} onChange={(e) => changeProvider(e.target.value as AiProvider)}>
+                {(["ollama", "openai", "anthropic"] as AiProvider[]).map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>)}
+              </select>
+            </label>
+            <label>
+              모델
+              <input value={ai.model} onChange={(e) => setAiF({ model: e.target.value })} placeholder={DEFAULT_MODELS[ai.provider]} spellCheck={false} />
+            </label>
+            <label className="settingwide">
+              Base URL <span className="hint tiny">(비우면 기본값: {DEFAULT_BASEURL[ai.provider]})</span>
+              <input value={ai.baseUrl} onChange={(e) => setAiF({ baseUrl: e.target.value })} placeholder={DEFAULT_BASEURL[ai.provider]} spellCheck={false} autoComplete="off" />
+            </label>
+            {ai.provider !== "ollama" && (
+              <label className="settingwide">
+                API Key
+                <span className="secretwrap">
+                  <input
+                    type={showAiKey ? "text" : "password"}
+                    value={ai.apiKey}
+                    onChange={(e) => setAiF({ apiKey: e.target.value })}
+                    placeholder={ai.provider === "openai" ? "sk-..." : "sk-ant-..."}
+                    autoComplete="off" spellCheck={false}
+                  />
+                  <button type="button" className="secrettoggle" onClick={() => setShowAiKey((v) => !v)}>{showAiKey ? "숨김" : "표시"}</button>
+                </span>
+              </label>
+            )}
+          </div>
+          <div className="row" style={{ marginTop: 10, alignItems: "center" }}>
+            <button className="active" disabled={aiBusy} onClick={testAi}>{aiBusy ? "테스트 중…" : "🔌 연결 테스트"}</button>
+            <span className="hint tiny">{aiMsg}</span>
+          </div>
+          <p className="hint tiny" style={{ marginTop: 8 }}>
+            Ollama는 키가 필요 없습니다(<code>ollama serve</code> 실행 후 <code>ollama pull {ai.provider === "ollama" ? ai.model || "llama3.1" : "llama3.1"}</code>).
+            설정하면 요청 <b>Info</b> 문서의 <b>✨ AI 초안</b> 버튼 등에서 사용됩니다.
+          </p>
+        </section>
+        )}
+
+        {tab === "mcp" && (
+        <section className="settingsec">
+          <h3>🔌 MCP 서버 (선택)</h3>
+          <p className="hint tiny">
+            MCP(Model Context Protocol) 서버에 <b>stdio</b>로 연결해 도구 목록을 확인합니다. 선택 통합이라
+            사용하지 않아도 됩니다. 예: <code>npx -y @modelcontextprotocol/server-filesystem /경로</code>.
+          </p>
+          {mcp.length === 0 && <p className="hint tiny">등록된 MCP 서버가 없습니다.</p>}
+          {mcp.map((s) => (
+            <div key={s.id} className="mcprow">
+              <div className="settinggrid">
+                <label>이름<input value={s.name} onChange={(e) => patchMcp(s.id, { name: e.target.value })} /></label>
+                <label>Command<input value={s.command} onChange={(e) => patchMcp(s.id, { command: e.target.value })} placeholder="npx" spellCheck={false} /></label>
+                <label className="settingwide">Args <span className="hint tiny">(공백 구분)</span>
+                  <input value={s.args} onChange={(e) => patchMcp(s.id, { args: e.target.value })} placeholder="-y @modelcontextprotocol/server-filesystem /path" spellCheck={false} autoComplete="off" />
+                </label>
+              </div>
+              <div className="row" style={{ marginTop: 6, alignItems: "center" }}>
+                <button className="active" disabled={mcpBusy === s.id} onClick={() => testMcp(s)}>{mcpBusy === s.id ? "연결 중…" : "🔍 연결·도구 확인"}</button>
+                <button className="danger" onClick={() => removeMcp(s.id)}>삭제</button>
+                <span className="hint tiny" style={{ flex: 1 }}>{mcpResult[s.id] ?? ""}</span>
+              </div>
+            </div>
+          ))}
+          <div style={{ marginTop: 10 }}>
+            <button onClick={addMcp}>＋ MCP 서버 추가</button>
+          </div>
         </section>
         )}
 
