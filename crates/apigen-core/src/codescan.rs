@@ -48,29 +48,72 @@ pub fn collect_source(dir: &Path, max_bytes: usize, exts: &[String]) -> Result<S
         if total >= max_bytes { truncated = true; break; }
         let Ok(content) = std::fs::read_to_string(f) else { continue }; // 바이너리/비-UTF8 무시
         let rel = f.strip_prefix(dir).unwrap_or(f).to_string_lossy().replace('\\', "/");
-        let header = format!("\n// ==================== {rel} ====================\n");
-        let remaining = max_bytes.saturating_sub(total);
-        if header.len() + content.len() + 1 > remaining {
-            // 남은 예산만큼만 넣고 종료.
-            truncated = true;
-            let mut take = remaining.saturating_sub(header.len() + 16).min(content.len());
-            while take > 0 && !content.is_char_boundary(take) { take -= 1; }
-            if take < 200 { break; } // 너무 적으면 이 파일은 생략
-            out.push_str(&header);
-            out.push_str(&content[..take]);
-            out.push_str("\n… (파일 일부 생략)\n");
-            included.push(rel);
-            total = max_bytes;
-            break;
-        }
-        out.push_str(&header);
-        out.push_str(&content);
-        out.push('\n');
-        total += header.len() + content.len() + 1;
-        included.push(rel);
+        if append_capped(&mut out, &mut included, &mut total, max_bytes, &rel, &content) { truncated = true; break; }
     }
 
     Ok(SourceBundle { text: out, file_count: included.len(), total_bytes: total, truncated, included })
+}
+
+/// 코드 파일의 상대경로 목록만 반환(내용 없이). 2단계 분석의 1단계(파일 선별)용.
+pub fn list_files(dir: &Path, exts: &[String]) -> Result<Vec<String>, CoreError> {
+    if !dir.is_dir() {
+        return Err(CoreError::Project(format!("폴더가 아닙니다: {}", dir.display())));
+    }
+    let allow: HashSet<String> = exts.iter().map(|e| e.trim().trim_start_matches('.').to_lowercase()).filter(|e| !e.is_empty()).collect();
+    let mut files: Vec<PathBuf> = Vec::new();
+    walk(dir, &allow, 0, &mut files);
+    files.sort();
+    Ok(files.iter().map(|f| f.strip_prefix(dir).unwrap_or(f).to_string_lossy().replace('\\', "/")).collect())
+}
+
+/// 지정한 상대경로 파일들만 읽어 수집(2단계 분석의 2단계). 경로 탈출(..)은 차단.
+pub fn collect_files(dir: &Path, rels: &[String], max_bytes: usize) -> Result<SourceBundle, CoreError> {
+    if !dir.is_dir() {
+        return Err(CoreError::Project(format!("폴더가 아닙니다: {}", dir.display())));
+    }
+    let base = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    let mut out = String::new();
+    let mut included = Vec::new();
+    let mut total = 0usize;
+    let mut truncated = false;
+
+    for rel in rels {
+        if total >= max_bytes { truncated = true; break; }
+        let safe = rel.replace('\\', "/");
+        if safe.contains("..") || safe.starts_with('/') { continue; } // 경로 탈출·절대경로 차단
+        let p = dir.join(&safe);
+        // canonicalize 후 base 하위인지 재확인.
+        let real = match p.canonicalize() { Ok(r) => r, Err(_) => continue };
+        if !real.starts_with(&base) { continue; }
+        if let Ok(md) = std::fs::metadata(&real) { if md.len() > MAX_FILE_BYTES { continue; } }
+        let Ok(content) = std::fs::read_to_string(&real) else { continue };
+        if append_capped(&mut out, &mut included, &mut total, max_bytes, &safe, &content) { truncated = true; break; }
+    }
+
+    Ok(SourceBundle { text: out, file_count: included.len(), total_bytes: total, truncated, included })
+}
+
+// 파일 하나를 크기 예산 안에서 out에 덧붙인다. 예산 초과로 더 넣을 수 없으면 true 반환.
+fn append_capped(out: &mut String, included: &mut Vec<String>, total: &mut usize, max_bytes: usize, rel: &str, content: &str) -> bool {
+    let header = format!("\n// ==================== {rel} ====================\n");
+    let remaining = max_bytes.saturating_sub(*total);
+    if header.len() + content.len() + 1 > remaining {
+        let mut take = remaining.saturating_sub(header.len() + 16).min(content.len());
+        while take > 0 && !content.is_char_boundary(take) { take -= 1; }
+        if take < 200 { return true; } // 남은 예산이 너무 적음 → 중단
+        out.push_str(&header);
+        out.push_str(&content[..take]);
+        out.push_str("\n… (파일 일부 생략)\n");
+        included.push(rel.to_string());
+        *total = max_bytes;
+        return true;
+    }
+    out.push_str(&header);
+    out.push_str(content);
+    out.push('\n');
+    *total += header.len() + content.len() + 1;
+    included.push(rel.to_string());
+    false
 }
 
 fn walk(dir: &Path, allow: &HashSet<String>, depth: usize, out: &mut Vec<PathBuf>) {
@@ -117,6 +160,16 @@ mod tests {
         // 아주 작은 상한 → truncated
         let small = collect_source(&tmp, 40, &exts).unwrap();
         assert!(small.truncated, "상한 초과 시 truncated");
+
+        // list_files: 상대경로만
+        let list = list_files(&tmp, &exts).unwrap();
+        assert!(list.contains(&"src/a.rs".to_string()) && list.contains(&"src/b.ts".to_string()));
+        assert!(!list.iter().any(|p| p.contains("node_modules")));
+
+        // collect_files: 지정 파일만 · 경로 탈출 차단
+        let picked = collect_files(&tmp, &["src/a.rs".into(), "../secret".into()], 1_000_000).unwrap();
+        assert_eq!(picked.file_count, 1, "지정한 1개만(.. 은 차단)");
+        assert!(picked.text.contains("fn a()"));
         let _ = fs::remove_dir_all(&tmp);
     }
 }

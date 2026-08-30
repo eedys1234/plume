@@ -254,6 +254,12 @@ export const api = {
   collectSource: (dir: string, maxBytes: number, extensions: string[]) =>
     invoke<{ text: string; fileCount: number; totalBytes: number; truncated: boolean; included: string[] }>(
       "collect_source", { dir, maxBytes, extensions }),
+  // 2단계 분석: 파일 목록만 → (AI 선별) → 선택 파일만 수집.
+  listSourceFiles: (dir: string, extensions: string[]) =>
+    invoke<string[]>("list_source_files", { dir, extensions }),
+  collectFiles: (dir: string, files: string[], maxBytes: number) =>
+    invoke<{ text: string; fileCount: number; totalBytes: number; truncated: boolean; included: string[] }>(
+      "collect_files", { dir, files, maxBytes }),
   // 각 컬렉션을 Bruno 포맷(<ws>/bruno/<이름>/)으로도 내보내 Bruno 앱에서 열 수 있게 한다.
   exportWorkspaceBruno: (wsDir: string, collections: { name: string; spec: Spec }[]) =>
     invoke<string>("export_workspace_bruno", { wsDir, collections }),

@@ -112,6 +112,8 @@ interface AppState {
   setSpec: (s: Spec) => void;
   /** 활성 컬렉션 스펙을 갱신하고 백그라운드로 검증까지 돌린다. */
   updateSpec: (fn: (draft: Spec) => void) => void;
+  /** 다른 스펙의 paths·x-folders·components를 활성 컬렉션에 병합(덮어쓰기/추가). */
+  mergeSpecIntoActive: (incoming: Spec) => void;
   revalidate: () => Promise<void>;
 
   setProjectDir: (d: string | null) => void;
@@ -392,6 +394,23 @@ export const useStore = create<AppState>()(
     // 타이핑 폭주 시 매번 Rust 검증 IPC를 보내지 않도록 400ms 디바운스.
     if (_revalidateTimer) clearTimeout(_revalidateTimer);
     _revalidateTimer = setTimeout(() => { _revalidateTimer = null; void get().revalidate(); }, 400);
+  },
+  mergeSpecIntoActive: (incoming) => {
+    get().updateSpec((d) => {
+      d.paths ??= {};
+      const inc = incoming?.paths ?? {};
+      for (const p of Object.keys(inc)) {
+        d.paths[p] ??= {};
+        for (const m of Object.keys(inc[p])) d.paths[p][m] = inc[p][m]; // 같은 path+method면 덮어씀
+      }
+      const incFolders: string[] = incoming?.["x-folders"] ?? [];
+      if (incFolders.length) d["x-folders"] = [...new Set([...(d["x-folders"] ?? []), ...incFolders])].sort();
+      const incSchemas = incoming?.components?.schemas;
+      if (incSchemas && Object.keys(incSchemas).length) {
+        d.components ??= {}; d.components.schemas ??= {};
+        Object.assign(d.components.schemas, incSchemas);
+      }
+    });
   },
   revalidate: async () => {
     try {

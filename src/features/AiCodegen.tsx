@@ -37,6 +37,20 @@ function stripFences(s: string): string {
   return (m ? m[1] : t).trim();
 }
 
+// 2단계 분석에서 소규모 리포는 선별 없이 전부 사용하는 임계.
+const SMALL_REPO = 25;
+const MAX_SELECT = 40; // AI가 선별할 최대 파일 수
+
+// 모델 응답에서 JSON 배열만 추출해 파싱(설명이 섞여 와도 대비).
+function parseJsonArray(s: string): string[] {
+  try {
+    const a = s.indexOf("["), b = s.lastIndexOf("]");
+    if (a === -1 || b === -1 || b < a) return [];
+    const arr = JSON.parse(s.slice(a, b + 1));
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : [];
+  } catch { return []; }
+}
+
 export function AiCodegenModal({ onClose }: { onClose: () => void }) {
   const projectRoot = useStore((s) => s.projectRoot);
   const [folder, setFolder] = useState(projectRoot ?? "");
@@ -44,10 +58,11 @@ export function AiCodegenModal({ onClose }: { onClose: () => void }) {
   const [maxKb, setMaxKb] = useState(150);
   const [preset, setPreset] = useState<Preset>("openapi");
   const [instruction, setInstruction] = useState(PRESETS.openapi.instruction);
+  const [twoStage, setTwoStage] = useState(false);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState("");
   const [out, setOut] = useState("");
-  const [meta, setMeta] = useState<{ fileCount: number; kb: number; truncated: boolean; included: string[] } | null>(null);
+  const [meta, setMeta] = useState<{ fileCount: number; kb: number; truncated: boolean; included: string[]; note?: string } | null>(null);
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(false);
   const ai = loadAi();
@@ -64,12 +79,39 @@ export function AiCodegenModal({ onClose }: { onClose: () => void }) {
     if (!folder) { setErr("분석할 리포지토리 폴더를 선택하세요."); return; }
     if (!aiConfigured(ai)) { setErr(`${PROVIDER_LABELS[ai.provider]} 설정이 필요합니다 (Settings ▸ AI).`); return; }
     const extList = exts.split(",").map((e) => e.trim()).filter(Boolean);
+    const cap = Math.max(10, maxKb) * 1024;
     setBusy(true);
     try {
-      setPhase("소스 코드 수집 중…");
-      const bundle = await api.collectSource(folder, Math.max(10, maxKb) * 1024, extList);
+      let bundle;
+      let note = "";
+      if (twoStage) {
+        // 1단계: 파일 목록 → AI가 관련 파일 선별 → 2단계: 선택 파일만 수집.
+        setPhase("파일 목록 수집 중…");
+        const all = await api.listSourceFiles(folder, extList);
+        if (all.length === 0) { setErr("대상 파일을 찾지 못했습니다. 확장자 목록을 확인하세요."); setBusy(false); return; }
+        let selected: string[];
+        if (all.length <= SMALL_REPO) {
+          selected = all; // 소규모는 선별 불필요
+        } else {
+          setPhase(`관련 파일 선별 중… (${all.length}개 중)`);
+          const selPrompt =
+            `작업 지시: ${instruction}\n\n` +
+            `아래 파일 목록에서 이 작업에 가장 관련 있는 파일만 골라 JSON 배열로 반환해줘(최대 ${MAX_SELECT}개, 경로는 목록 그대로).\n\n` +
+            all.join("\n");
+          const selRaw = await callAI(selPrompt, "You select relevant source files for a task. Respond ONLY with a JSON array of file path strings from the given list. No prose.");
+          const set = new Set(all);
+          selected = parseJsonArray(selRaw).filter((p) => set.has(p)).slice(0, MAX_SELECT);
+          if (selected.length === 0) { selected = all; note = "AI 선별 실패 → 전체에서 크기 상한까지 사용. "; } // 폴백
+          else note = `AI가 ${all.length}개 중 ${selected.length}개 선별. `;
+        }
+        setPhase(`선택 파일 수집 중… (${selected.length}개)`);
+        bundle = await api.collectFiles(folder, selected, cap);
+      } else {
+        setPhase("소스 코드 수집 중…");
+        bundle = await api.collectSource(folder, cap, extList);
+      }
       if (bundle.fileCount === 0) { setErr("대상 파일을 찾지 못했습니다. 확장자 목록을 확인하세요."); setBusy(false); return; }
-      setMeta({ fileCount: bundle.fileCount, kb: Math.round(bundle.totalBytes / 1024), truncated: bundle.truncated, included: bundle.included });
+      setMeta({ fileCount: bundle.fileCount, kb: Math.round(bundle.totalBytes / 1024), truncated: bundle.truncated, included: bundle.included, note });
       setPhase(`AI 생성 중… (파일 ${bundle.fileCount}개${bundle.truncated ? " · 일부 생략" : ""})`);
       const sys = PRESETS[preset].system;
       const prompt =
@@ -87,16 +129,23 @@ export function AiCodegenModal({ onClose }: { onClose: () => void }) {
     navigator.clipboard.writeText(out).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {});
   }
 
-  async function importAsCollection() {
+  // mode: "new"=새 컬렉션 / "merge"=활성 컬렉션에 병합
+  async function importSpec(mode: "new" | "merge") {
     const st = useStore.getState();
     try {
       const yaml = stripFences(out);
       const spec = await api.importSpec(yaml, "yaml");
       const title = spec?.info?.title || `${basename(folder)} API`;
-      st.addCollection(title);
-      st.setSpec(spec);
-      st.showToast(`컬렉션으로 가져옴 ✓ (${title})`);
-      st.logEvent("AI", `코드 분석 → 컬렉션 생성 · ${title}`);
+      if (mode === "new") {
+        st.addCollection(title);
+        st.setSpec(spec);
+        st.showToast(`새 컬렉션으로 가져옴 ✓ (${title})`);
+        st.logEvent("AI", `코드 분석 → 새 컬렉션 · ${title}`);
+      } else {
+        st.mergeSpecIntoActive(spec);
+        st.showToast(`활성 컬렉션에 병합됨 ✓`);
+        st.logEvent("AI", `코드 분석 → 활성 컬렉션 병합 · ${title}`);
+      }
       onClose();
     } catch (e: any) {
       st.showAlert(`${e?.message ?? e}`, { title: "OpenAPI 가져오기 실패", kind: "err" });
@@ -142,6 +191,11 @@ export function AiCodegenModal({ onClose }: { onClose: () => void }) {
               placeholder="예) 이 코드의 REST 엔드포인트로 OpenAPI 스펙을 만들어줘" />
           </label>
 
+          <label className="row" style={{ gap: 8, alignItems: "center", cursor: "pointer", color: "var(--text-dim)", fontSize: 12 }}>
+            <input type="checkbox" checked={twoStage} onChange={(e) => setTwoStage(e.target.checked)} />
+            <span>대형 리포 2단계 분석 — 파일 목록을 먼저 AI가 훑어 <b>관련 파일만 선별</b> 후 분석(토큰 절약)</span>
+          </label>
+
           <div className="row" style={{ alignItems: "center", marginTop: 4 }}>
             <button className="active" disabled={busy} onClick={run}>{busy ? (phase || "처리 중…") : "▶ 분석 & 생성"}</button>
             <span className="hint tiny">제공자: {PROVIDER_LABELS[ai.provider]} · {ai.model}</span>
@@ -151,7 +205,7 @@ export function AiCodegenModal({ onClose }: { onClose: () => void }) {
 
           {meta && (
             <div className="hint tiny" style={{ marginTop: 6 }}>
-              포함 파일 {meta.fileCount}개 · {meta.kb}KB{meta.truncated ? " · ⚠ 크기 상한으로 일부 생략됨(상한을 늘리거나 폴더를 좁혀보세요)" : ""}
+              {meta.note}포함 파일 {meta.fileCount}개 · {meta.kb}KB{meta.truncated ? " · ⚠ 크기 상한으로 일부 생략됨(상한을 늘리거나 2단계 분석을 켜보세요)" : ""}
             </div>
           )}
 
@@ -161,7 +215,10 @@ export function AiCodegenModal({ onClose }: { onClose: () => void }) {
                 <strong>생성 결과</strong>
                 <div className="row" style={{ gap: 6 }}>
                   <button onClick={copy}>{copied ? "✓ 복사됨" : "복사"}</button>
-                  {PRESETS[preset].kind === "openapi" && <button className="active" onClick={importAsCollection}>＋ 컬렉션으로 가져오기</button>}
+                  {PRESETS[preset].kind === "openapi" && <>
+                    <button onClick={() => importSpec("merge")} title="현재 활성 컬렉션에 경로/스키마 병합">활성 컬렉션에 병합</button>
+                    <button className="active" onClick={() => importSpec("new")}>＋ 새 컬렉션</button>
+                  </>}
                 </div>
               </div>
               <textarea className="rawedit" readOnly value={out} rows={16} spellCheck={false} />

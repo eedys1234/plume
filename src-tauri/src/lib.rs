@@ -137,6 +137,8 @@ pub fn run() {
             commands::ai_complete,
             commands::mcp_list_tools,
             commands::collect_source,
+            commands::list_source_files,
+            commands::collect_files,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 앱 실행 중 오류");

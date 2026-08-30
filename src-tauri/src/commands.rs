@@ -737,6 +737,18 @@ pub fn collect_source(dir: String, max_bytes: usize, extensions: Vec<String>) ->
     Ok(core::codescan::collect_source(Path::new(&dir), max_bytes, &extensions)?)
 }
 
+/// 코드 파일 상대경로 목록만(2단계 분석의 파일 선별용).
+#[tauri::command]
+pub fn list_source_files(dir: String, extensions: Vec<String>) -> CmdResult<Vec<String>> {
+    Ok(core::codescan::list_files(Path::new(&dir), &extensions)?)
+}
+
+/// 지정한 파일들만 수집(2단계 분석 2단계).
+#[tauri::command]
+pub fn collect_files(dir: String, files: Vec<String>, max_bytes: usize) -> CmdResult<core::codescan::SourceBundle> {
+    Ok(core::codescan::collect_files(Path::new(&dir), &files, max_bytes)?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
