@@ -910,6 +910,12 @@ details > summary:hover { color: var(--text); }
 .copybtn:hover { color: var(--text); border-color: var(--accent); }
 .copybtn.done { color: var(--ok); border-color: var(--ok); }
 .copybtn svg { display: block; }
+/* AI 코드 분석·생성 모달 */
+.modal.codegenmodal { width: 840px; max-width: 94vw; }
+.codegenbody { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; max-height: 74vh; overflow: auto; }
+.codegenbody > label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-dim); }
+.codegenerr { padding: 8px 12px; font-size: 12px; color: #d98324; background: color-mix(in srgb, #d98324 12%, var(--surface-2)); border: 1px solid var(--line); border-radius: var(--radius); }
+.codegenout { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
 /* MCP 서버 행 */
 .mcprow { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; background: var(--surface-2); }
 /* Info 문서 에디터(게시판식 Markdown + Rich Text 토글) */

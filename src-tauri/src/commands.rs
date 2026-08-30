@@ -731,6 +731,12 @@ pub fn mcp_list_tools(server: core::mcp::McpServer) -> CmdResult<Vec<core::mcp::
     Ok(core::mcp::list_tools(server)?)
 }
 
+/// 로컬 리포 폴더의 소스 코드를 수집(AI 코드 분석·생성 입력용).
+#[tauri::command]
+pub fn collect_source(dir: String, max_bytes: usize, extensions: Vec<String>) -> CmdResult<core::codescan::SourceBundle> {
+    Ok(core::codescan::collect_source(Path::new(&dir), max_bytes, &extensions)?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

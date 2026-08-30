@@ -23,6 +23,7 @@ const ExportPanel = lazy(() => import("./features/ImportExport").then((m) => ({ 
 const Git = lazy(() => import("./features/Git").then((m) => ({ default: m.Git })));
 const History = lazy(() => import("./features/History").then((m) => ({ default: m.History })));
 const Settings = lazy(() => import("./features/Settings").then((m) => ({ default: m.Settings })));
+const AiCodegenModal = lazy(() => import("./features/AiCodegen").then((m) => ({ default: m.AiCodegenModal })));
 
 // 워크스페이스 로드/생성은 되돌리기 대상이 아니다. 하지만 히스토리 저장이 500ms 디바운스라
 // 즉시 clear()만으론 직후 예약분이 다시 쌓인다 → pause 후 디바운스 창을 넘겨 clear+resume.
@@ -90,6 +91,7 @@ export function App() {
   const [showUpdate, setShowUpdate] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showManual, setShowManual] = useState(false);
+  const [showCodegen, setShowCodegen] = useState(false);
   const [checking, setChecking] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -466,6 +468,7 @@ export function App() {
         {projectRoot && <button className="wsadd" title="새 워크스페이스" onClick={() => setShowNewWs(true)}>＋</button>}
         {projectDir && <button onClick={() => setShowImport(true)}>⬇ Import</button>}
         {projectDir && <button onClick={() => setShowExport(true)}>⬆ Export</button>}
+        {projectRoot && <button title="AI로 로컬 리포 소스를 분석해 스펙·문서 생성" onClick={() => setShowCodegen(true)}>🤖 AI</button>}
         {projectDir && (
           <button
             className={dirty ? "savebtn dirty" : "savebtn"}
@@ -505,6 +508,11 @@ export function App() {
 
       {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
       {showManual && <ManualModal onClose={() => setShowManual(false)} />}
+      {showCodegen && (
+        <Suspense fallback={null}>
+          <AiCodegenModal onClose={() => setShowCodegen(false)} />
+        </Suspense>
+      )}
 
       {showDiag && (
         <>

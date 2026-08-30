@@ -12,6 +12,7 @@
 
 pub mod ai;
 pub mod bru;
+pub mod codescan;
 pub mod deploy;
 pub mod error;
 pub mod mcp;

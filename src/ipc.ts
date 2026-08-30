@@ -250,6 +250,10 @@ export const api = {
     invoke<{ name: string; description: string }[]>("mcp_list_tools", { server: {
       transport: server.transport ?? "stdio", command: server.command, args: server.args ?? [], env: server.env ?? [],
     } }),
+  // 로컬 리포 폴더의 소스 코드 수집(AI 코드 분석 입력).
+  collectSource: (dir: string, maxBytes: number, extensions: string[]) =>
+    invoke<{ text: string; fileCount: number; totalBytes: number; truncated: boolean; included: string[] }>(
+      "collect_source", { dir, maxBytes, extensions }),
   // 각 컬렉션을 Bruno 포맷(<ws>/bruno/<이름>/)으로도 내보내 Bruno 앱에서 열 수 있게 한다.
   exportWorkspaceBruno: (wsDir: string, collections: { name: string; spec: Spec }[]) =>
     invoke<string>("export_workspace_bruno", { wsDir, collections }),
