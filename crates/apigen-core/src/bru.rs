@@ -119,6 +119,12 @@ fn dict_inner(pairs: &[(String, String)]) -> String {
     }
     s
 }
+// 텍스트 블록(docs/script/tests) 내용 → 들여쓰기 제거 후 비어 있으면 None.
+fn text_block_opt(inner: &str) -> Option<String> {
+    let d = dedent(inner);
+    if d.trim().is_empty() { None } else { Some(d.trim_end().to_string()) }
+}
+
 fn text_inner(content: &str) -> String {
     let indented = content
         .lines()
@@ -165,6 +171,12 @@ pub struct BruRequest {
     pub headers: Vec<(String, String)>,
     pub auth: BruAuth,
     pub body: BruBody,
+    /// `docs` 블록(Markdown 명세). OpenAPI `description`과 상호 매핑된다.
+    pub docs: Option<String>,
+    /// `script:pre-request` / `script:post-response` / `tests` 블록(JS). Plume x-필드와 상호 매핑.
+    pub pre_script: Option<String>,
+    pub post_script: Option<String>,
+    pub tests: Option<String>,
 }
 
 impl BruRequest {
@@ -181,6 +193,10 @@ impl BruRequest {
             headers: vec![],
             auth: BruAuth::None,
             body: BruBody::None,
+            docs: None,
+            pre_script: None,
+            post_script: None,
+            tests: None,
         };
         let mut body_kind = "none".to_string();
         let mut auth_kind = "none".to_string();
@@ -227,6 +243,11 @@ impl BruRequest {
                 "body:json" => req.body = BruBody::Json(dedent(&b.inner)),
                 "body:text" => req.body = BruBody::Text(dedent(&b.inner)),
                 "body:form-urlencoded" => req.body = BruBody::Form(parse_dict(&b.inner)),
+                // 텍스트 블록들: 들여쓰기만 걷어내고 원문 보존.
+                "docs" => req.docs = text_block_opt(&b.inner),                       // Markdown 명세
+                "script:pre-request" => req.pre_script = text_block_opt(&b.inner),   // JS
+                "script:post-response" => req.post_script = text_block_opt(&b.inner),
+                "tests" => req.tests = text_block_opt(&b.inner),
                 _ => {}
             }
         }
@@ -301,6 +322,24 @@ impl BruRequest {
             }
             BruBody::None => {}
         }
+        // docs(Markdown 명세) — 있으면 text 블록으로 그대로 기록.
+        if let Some(d) = &self.docs {
+            if !d.trim().is_empty() {
+                blocks.push(BruBlock { name: "docs".into(), inner: text_inner(d) });
+            }
+        }
+        // 스크립트/테스트(JS) — Bruno 블록명 그대로.
+        for (name, val) in [
+            ("script:pre-request", &self.pre_script),
+            ("script:post-response", &self.post_script),
+            ("tests", &self.tests),
+        ] {
+            if let Some(s) = val {
+                if !s.trim().is_empty() {
+                    blocks.push(BruBlock { name: name.into(), inner: text_inner(s) });
+                }
+            }
+        }
         blocks
     }
 
@@ -370,6 +409,10 @@ pub fn http_to_bru(name: &str, seq: Option<i64>, req: &HttpRequest) -> BruReques
                 headers,
                 auth: BruAuth::None,
                 body,
+                docs: None,
+                pre_script: None,
+                post_script: None,
+                tests: None,
             };
         }
     };
@@ -383,6 +426,10 @@ pub fn http_to_bru(name: &str, seq: Option<i64>, req: &HttpRequest) -> BruReques
         headers: req.headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         auth,
         body,
+        docs: None,
+        pre_script: None,
+        post_script: None,
+        tests: None,
     }
 }
 
@@ -438,6 +485,15 @@ fn media_json_example(mt: &openapiv3::MediaType) -> Option<String> {
 }
 
 /// OpenAPI Operation → Bruno 요청.
+// operation의 x-확장 텍스트 필드(비어 있으면 None).
+fn ext_text(op: &Operation, key: &str) -> Option<String> {
+    op.extensions
+        .get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string())
+}
+
 pub fn operation_to_bru(name: &str, seq: i64, path: &str, method: &str, op: &Operation) -> BruRequest {
     let mut headers = Vec::new();
     let mut query = Vec::new();
@@ -474,6 +530,12 @@ pub fn operation_to_bru(name: &str, seq: i64, path: &str, method: &str, op: &Ope
         headers,
         auth: BruAuth::None,
         body,
+        // OpenAPI description(Markdown) → Bruno docs 블록. Plume Info 문서가 Bruno에도 보이게.
+        docs: op.description.clone().filter(|d| !d.trim().is_empty()),
+        // Plume Script/Tests 탭 내용 → Bruno 블록으로 그대로 내보내기.
+        pre_script: ext_text(op, "x-pre-request-script"),
+        post_script: ext_text(op, "x-post-response-script"),
+        tests: ext_text(op, "x-tests"),
     }
 }
 
@@ -657,6 +719,8 @@ struct YamlReq {
     info: Option<YamlInfo>,
     #[serde(default)]
     http: Option<YamlHttp>,
+    #[serde(default)]
+    docs: Option<String>,
 }
 #[derive(serde::Deserialize)]
 struct YamlInfo {
@@ -760,6 +824,7 @@ fn parse_yaml_request(text: &str) -> Option<BruRequest> {
     }
     let name = y.info.as_ref().and_then(|i| i.name.clone()).unwrap_or_default();
     let seq = y.info.as_ref().and_then(|i| i.seq);
+    let docs = y.docs.filter(|d| !d.trim().is_empty());
     let method = http.method.clone().unwrap_or_else(|| "get".into()).to_lowercase();
 
     let headers = http
@@ -800,6 +865,10 @@ fn parse_yaml_request(text: &str) -> Option<BruRequest> {
         headers,
         auth: BruAuth::None,
         body,
+        docs,
+        pre_script: None,
+        post_script: None,
+        tests: None,
     })
 }
 
@@ -898,6 +967,20 @@ pub fn import_collection(root: &Path) -> Result<BruImport> {
         }
 
         let mut op = json!({"summary": req.name, "responses": {"200": {"description": "OK"}}});
+        // Bruno docs 블록 → OpenAPI description(Markdown). Info 탭 문서 에디터에 그대로 표시.
+        if let Some(d) = &req.docs {
+            op["description"] = Value::String(d.clone());
+        }
+        // Bruno 스크립트/테스트(JS) → Plume Script/Tests 탭 필드.
+        for (key, val) in [
+            ("x-pre-request-script", &req.pre_script),
+            ("x-post-response-script", &req.post_script),
+            ("x-tests", &req.tests),
+        ] {
+            if let Some(s) = val {
+                op[key] = Value::String(s.clone());
+            }
+        }
         if !params.is_empty() {
             op["parameters"] = Value::Array(params);
         }
@@ -994,8 +1077,26 @@ mod tests {
             path_params: vec![],
             headers: vec![("Accept".into(), "application/json".into())],
             auth: BruAuth::Bearer("{{token}}".into()),
+            docs: None,
+            pre_script: None,
+            post_script: None,
+            tests: None,
             body: BruBody::Json("{\n  \"email\": \"geo@colosseum.kr\"\n}".into()),
         }
+    }
+
+    #[test]
+    fn docs_block_parses_and_roundtrips() {
+        let src = "meta {\n  name: Ping\n  seq: 1\n}\n\nget {\n  url: {{baseUrl}}/ping\n  body: none\n  auth: none\n}\n\ndocs {\n  # Ping API\n\n  헬스체크 **엔드포인트**입니다.\n}\n";
+        let req = BruRequest::parse(src);
+        let docs = req.docs.clone().expect("docs 블록이 파싱돼야");
+        assert!(docs.contains("# Ping API") && docs.contains("**엔드포인트**"), "원문 보존: {docs}");
+        // 직렬화 → 재파싱해도 docs 유지
+        let back = BruRequest::parse(&req.serialize());
+        let d2 = back.docs.expect("직렬화 후에도 docs 유지");
+        assert!(d2.contains("# Ping API") && d2.contains("**엔드포인트**"));
+        // docs 없는 요청은 블록을 만들지 않는다
+        assert!(!sample().serialize().contains("docs {"));
     }
 
     #[test]
@@ -1150,6 +1251,72 @@ paths:
     }
 
     // 같은 URL/메서드 요청은 하나로 병합(경로 중복 없음). 본문 변형은 examples로 보존.
+    #[test]
+    fn import_maps_docs_to_description_and_export_writes_docs() {
+        // import: .bru docs 블록 → OpenAPI description(Markdown)
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("bruno.json"), r#"{"name":"C","version":"1"}"#).unwrap();
+        fs::write(
+            dir.path().join("ping.bru"),
+            "meta {\n  name: Ping\n  seq: 1\n}\n\nget {\n  url: {{baseUrl}}/ping\n  body: none\n  auth: none\n}\n\ndocs {\n  # Ping API\n\n  헬스체크 **엔드포인트**입니다.\n}\n",
+        ).unwrap();
+        let imported = import_collection(dir.path()).unwrap();
+        let desc = imported.spec["paths"]["/ping"]["get"]["description"]
+            .as_str()
+            .expect("docs 블록이 description으로 매핑돼야");
+        assert!(desc.contains("# Ping API") && desc.contains("**엔드포인트**"), "description={desc}");
+
+        // export: description → .bru docs 블록(Plume Info 문서가 Bruno에도 보이도록)
+        let spec: OpenAPI = serde_json::from_value(imported.spec).unwrap();
+        let out = tempfile::tempdir().unwrap();
+        export_collection_at(out.path(), &spec).unwrap();
+        let mut written = String::new();
+        for e in fs::read_dir(out.path()).unwrap().flatten() {
+            let p = e.path();
+            if p.extension().and_then(|s| s.to_str()) == Some("bru") {
+                written.push_str(&fs::read_to_string(&p).unwrap());
+            }
+        }
+        assert!(written.contains("docs {"), "export된 .bru에 docs 블록이 있어야:\n{written}");
+        assert!(written.contains("# Ping API") && written.contains("**엔드포인트**"));
+    }
+
+    #[test]
+    fn scripts_and_tests_roundtrip_and_import_to_x_fields() {
+        let src = "meta {\n  name: Login\n  seq: 1\n}\n\npost {\n  url: {{baseUrl}}/login\n  body: none\n  auth: none\n}\n\nscript:pre-request {\n  req.setHeader('X-Time', String(Date.now()));\n}\n\nscript:post-response {\n  bru.setEnvVar('token', res.body.token);\n}\n\ntests {\n  test('200', () => { expect(res.status).toBe(200); });\n}\n";
+        let req = BruRequest::parse(src);
+        assert!(req.pre_script.as_deref().unwrap_or("").contains("setHeader"));
+        assert!(req.post_script.as_deref().unwrap_or("").contains("setEnvVar"));
+        assert!(req.tests.as_deref().unwrap_or("").contains("toBe(200)"));
+        // 직렬화 왕복
+        let back = BruRequest::parse(&req.serialize());
+        assert!(back.pre_script.as_deref().unwrap_or("").contains("setHeader"));
+        assert!(back.tests.as_deref().unwrap_or("").contains("toBe(200)"));
+
+        // 트리 import → Plume x-필드
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("bruno.json"), r#"{"name":"C","version":"1"}"#).unwrap();
+        fs::write(dir.path().join("login.bru"), src).unwrap();
+        let imported = import_collection(dir.path()).unwrap();
+        let op = &imported.spec["paths"]["/login"]["post"];
+        assert!(op["x-pre-request-script"].as_str().unwrap_or("").contains("setHeader"));
+        assert!(op["x-post-response-script"].as_str().unwrap_or("").contains("setEnvVar"));
+        assert!(op["x-tests"].as_str().unwrap_or("").contains("toBe(200)"));
+
+        // export 시 다시 Bruno 블록으로
+        let spec: OpenAPI = serde_json::from_value(imported.spec).unwrap();
+        let out = tempfile::tempdir().unwrap();
+        export_collection_at(out.path(), &spec).unwrap();
+        let mut written = String::new();
+        for e in fs::read_dir(out.path()).unwrap().flatten() {
+            let p = e.path();
+            if p.extension().and_then(|s| s.to_str()) == Some("bru") {
+                written.push_str(&fs::read_to_string(&p).unwrap());
+            }
+        }
+        assert!(written.contains("script:pre-request {") && written.contains("script:post-response {") && written.contains("tests {"), "{written}");
+    }
+
     #[test]
     fn import_collection_merges_colliding_requests() {
         let dir = tempfile::tempdir().unwrap();
