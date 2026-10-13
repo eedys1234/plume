@@ -120,6 +120,14 @@ fn dict_inner(pairs: &[(String, String)]) -> String {
     s
 }
 // 텍스트 블록(docs/script/tests) 내용 → 들여쓰기 제거 후 비어 있으면 None.
+// 같은 유형의 스크립트가 여러 개면 빈 줄로 이어붙인다(손실 없이 보존).
+fn append_opt(slot: &mut Option<String>, code: String) {
+    match slot {
+        Some(s) => { s.push_str("\n\n"); s.push_str(&code); }
+        None => *slot = Some(code),
+    }
+}
+
 fn text_block_opt(inner: &str) -> Option<String> {
     let d = dedent(inner);
     if d.trim().is_empty() { None } else { Some(d.trim_end().to_string()) }
@@ -721,6 +729,21 @@ struct YamlReq {
     http: Option<YamlHttp>,
     #[serde(default)]
     docs: Option<String>,
+    // runtime.scripts: [{ type: before-request | after-response | tests, code: |- }]
+    #[serde(default)]
+    runtime: Option<YamlRuntime>,
+}
+#[derive(serde::Deserialize, Default)]
+struct YamlRuntime {
+    #[serde(default)]
+    scripts: Vec<YamlScript>,
+}
+#[derive(serde::Deserialize)]
+struct YamlScript {
+    #[serde(default, rename = "type")]
+    kind: Option<String>,
+    #[serde(default)]
+    code: Option<String>,
 }
 #[derive(serde::Deserialize)]
 struct YamlInfo {
@@ -825,6 +848,19 @@ fn parse_yaml_request(text: &str) -> Option<BruRequest> {
     let name = y.info.as_ref().and_then(|i| i.name.clone()).unwrap_or_default();
     let seq = y.info.as_ref().and_then(|i| i.seq);
     let docs = y.docs.filter(|d| !d.trim().is_empty());
+    // runtime.scripts → pre/post/tests. Bruno 표준 별칭 모두 수용, 모르는 type은 무시.
+    let (mut pre_script, mut post_script, mut tests) = (None, None, None);
+    if let Some(rt) = y.runtime {
+        for s in rt.scripts {
+            let Some(code) = s.code.filter(|c| !c.trim().is_empty()) else { continue };
+            match s.kind.as_deref().unwrap_or("") {
+                "before-request" | "pre-request" | "preRequest" => append_opt(&mut pre_script, code),
+                "after-response" | "post-response" | "postResponse" => append_opt(&mut post_script, code),
+                "tests" | "test" => append_opt(&mut tests, code),
+                _ => {}
+            }
+        }
+    }
     let method = http.method.clone().unwrap_or_else(|| "get".into()).to_lowercase();
 
     let headers = http
@@ -866,9 +902,9 @@ fn parse_yaml_request(text: &str) -> Option<BruRequest> {
         auth: BruAuth::None,
         body,
         docs,
-        pre_script: None,
-        post_script: None,
-        tests: None,
+        pre_script,
+        post_script,
+        tests,
     })
 }
 
@@ -1251,6 +1287,27 @@ paths:
     }
 
     // 같은 URL/메서드 요청은 하나로 병합(경로 중복 없음). 본문 변형은 examples로 보존.
+    #[test]
+    fn yaml_runtime_scripts_and_docs_import_to_x_fields() {
+        // 실제 Bruno(OpenCollection) YAML 형태: runtime.scripts 리스트 + 최상위 docs.
+        let dir = tempfile::tempdir().unwrap();
+        let yml = "info:\n  name: 로그인\n  type: http\n  seq: 1\nhttp:\n  method: POST\n  url: \"{{base}}/login\"\nruntime:\n  timeout: 0\n  scripts:\n    - type: before-request\n      code: |-\n        bru.setVar('a', 1);\n    - type: before-request\n      code: |-\n        bru.setVar('b', 2);\n    - type: after-response\n      code: |-\n        bru.setEnvVar('token', res.body.token);\n    - type: tests\n      code: |-\n        test('ok', () => { expect(res.status).toBe(200); });\n    - type: weird-unknown\n      code: |-\n        ignored();\ndocs: |\n  ### 로그인 API\n  **필수** 헤더\n";
+        std::fs::write(dir.path().join("login.yml"), yml).unwrap();
+
+        let imported = import_collection(dir.path()).unwrap();
+        let op = &imported.spec["paths"]["/login"]["post"];
+        let pre = op["x-pre-request-script"].as_str().expect("before-request → x-pre-request-script");
+        // 같은 유형 2개는 이어붙여 모두 보존.
+        assert!(pre.contains("setVar('a'") && pre.contains("setVar('b'"), "pre={pre}");
+        assert!(op["x-post-response-script"].as_str().unwrap_or("").contains("setEnvVar('token'"));
+        assert!(op["x-tests"].as_str().unwrap_or("").contains("toBe(200)"));
+        // 모르는 type은 어디에도 들어가지 않는다.
+        let all = serde_json::to_string(op).unwrap();
+        assert!(!all.contains("ignored();"), "unknown script type은 무시돼야");
+        // 최상위 docs → description
+        assert!(op["description"].as_str().unwrap_or("").contains("### 로그인 API"));
+    }
+
     #[test]
     fn import_maps_docs_to_description_and_export_writes_docs() {
         // import: .bru docs 블록 → OpenAPI description(Markdown)
