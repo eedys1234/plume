@@ -1,0 +1,3 @@
+# 셸 스크립트는 반드시 LF로 유지(.command/.sh가 CRLF면 macOS에서 실행 불가).
+*.command text eol=lf
+*.sh text eol=lf

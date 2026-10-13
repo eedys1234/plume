@@ -76,10 +76,11 @@ jobs:
           releaseBody: |
             설치파일을 내려받아 설치하세요. (Windows: .msi/.exe · macOS: .dmg)
 
-            ⚠️ **macOS**: Apple Developer 공증(notarization) 전이라 첫 실행 시 Gatekeeper 경고가 뜰 수 있습니다.
-            앱은 ad-hoc 서명되어 있어 아래 중 하나로 열 수 있습니다:
-            - **권장**: Applications의 `Plume.app`을 **우클릭 → 열기 → 열기**(최초 1회만).
-            - 또는 터미널에서 quarantine 제거:
+            ⚠️ **macOS**: Apple Developer 공증(notarization) 전이라 첫 실행 시 "손상되었습니다(is damaged)" 경고가 뜰 수 있습니다.
+            앱은 ad-hoc 서명되어 있어 아래 중 하나로 열 수 있습니다(최초 1회만):
+            - **가장 쉬움**: 함께 첨부된 **`macos-fix-gatekeeper.command`** 를 받아 Plume.app 과 같은 폴더(또는 Applications로 옮긴 뒤)에서 **우클릭 → 열기 → 열기**. 자동으로 격리 속성을 제거합니다.
+            - 또는 Applications의 `Plume.app`을 **우클릭 → 열기 → 열기**.
+            - 또는 터미널에서 직접:
             ```
             xattr -dr com.apple.quarantine /Applications/Plume.app
             ```
@@ -89,6 +90,20 @@ jobs:
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
+
+  # 빌드 완료 후 macOS Gatekeeper 해제 도우미 스크립트를 릴리스에 1회 첨부.
+  attach-mac-helper:
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload macOS Gatekeeper helper
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" scripts/macos-fix-gatekeeper.command --clobber
 # 사용법:
 #   1) 최초 1회: 서명키를 Repo Secrets에 등록
 #        - TAURI_SIGNING_PRIVATE_KEY          = src-tauri/plume-update.key 파일 전체 내용
