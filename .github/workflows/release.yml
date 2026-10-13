@@ -12,6 +12,9 @@ jobs:
       contents: write
     strategy:
       fail-fast: false
+      # 레그를 순차 실행: 병렬이면 각 레그가 같은 릴리스의 latest.json을
+      # 내려받기→병합→삭제→재업로드 하다가 서로 자산을 교체해 404(Not Found)가 난다.
+      max-parallel: 1
       matrix:
         include:
           - platform: macos-latest # Apple Silicon
