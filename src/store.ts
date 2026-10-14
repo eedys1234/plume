@@ -114,6 +114,10 @@ interface AppState {
   updateSpec: (fn: (draft: Spec) => void) => void;
   /** 다른 스펙의 paths·x-folders·components를 활성 컬렉션에 병합(덮어쓰기/추가). */
   mergeSpecIntoActive: (incoming: Spec) => void;
+  /** 요청의 외부 공개 허용 플래그(x-public). false면 키 제거 = 기본 비공개. */
+  setRequestPublic: (path: string, method: string, pub: boolean) => void;
+  /** 활성 컬렉션의 모든 요청을 일괄 공개/비공개. */
+  setAllPublic: (pub: boolean) => void;
   revalidate: () => Promise<void>;
 
   setProjectDir: (d: string | null) => void;
@@ -394,6 +398,23 @@ export const useStore = create<AppState>()(
     // 타이핑 폭주 시 매번 Rust 검증 IPC를 보내지 않도록 400ms 디바운스.
     if (_revalidateTimer) clearTimeout(_revalidateTimer);
     _revalidateTimer = setTimeout(() => { _revalidateTimer = null; void get().revalidate(); }, 400);
+  },
+  setRequestPublic: (path, method, pub) => {
+    get().updateSpec((d) => {
+      const op = d.paths?.[path]?.[method];
+      if (!op) return;
+      if (pub) op["x-public"] = true; else delete op["x-public"];
+    });
+  },
+  setAllPublic: (pub) => {
+    get().updateSpec((d) => {
+      for (const p of Object.keys(d.paths ?? {})) for (const m of Object.keys(d.paths[p] ?? {})) {
+        if (!PUBLIC_HTTP_METHODS.includes(m)) continue;
+        const op = d.paths[p][m];
+        if (!op || typeof op !== "object") continue;
+        if (pub) op["x-public"] = true; else delete op["x-public"];
+      }
+    });
   },
   mergeSpecIntoActive: (incoming) => {
     get().updateSpec((d) => {
@@ -735,6 +756,43 @@ export function foldersFromOps(ops: { op: any }[], spec: Spec): string[] {
 }
 
 /** 여러 컬렉션을 하나의 OpenAPI 스펙으로 병합(전체 Export/문서용). paths·x-folders·components 병합. */
+const PUBLIC_HTTP_METHODS = ["get", "post", "put", "delete", "patch", "head", "options", "trace"];
+
+/** `x-public === true` 인 요청만 남긴 스펙(외부 공개용 Export). 기본 비공개 — 체크한 것만 나간다.
+ *  x-folders는 남은 요청의 폴더(조상 포함)로 재계산, 나머지 루트 키(info/components 등)는 보존. */
+export function filterPublicSpec(spec: any): any {
+  if (!spec) return spec;
+  const paths: any = {};
+  const folders = new Set<string>();
+  for (const p of Object.keys(spec.paths ?? {})) {
+    const item = spec.paths[p] ?? {};
+    const kept: any = {};
+    for (const m of Object.keys(item)) {
+      if (!PUBLIC_HTTP_METHODS.includes(m)) continue;
+      const op = item[m];
+      if (op?.["x-public"] !== true) continue;
+      kept[m] = op;
+      const f = op["x-folder"];
+      if (typeof f === "string" && f) {
+        let acc = "";
+        for (const seg of f.split("/").filter(Boolean)) { acc = acc ? `${acc}/${seg}` : seg; folders.add(acc); }
+      }
+    }
+    if (Object.keys(kept).length) {
+      for (const k of Object.keys(item)) if (!PUBLIC_HTTP_METHODS.includes(k)) kept[k] = item[k]; // path-level parameters 등 보존
+      paths[p] = kept;
+    }
+  }
+  return { ...spec, paths, "x-folders": [...folders].sort() };
+}
+
+/** 스펙의 요청(operation) 개수. */
+export function countOps(spec: any): number {
+  let n = 0;
+  for (const p of Object.keys(spec?.paths ?? {})) for (const m of Object.keys(spec.paths[p] ?? {})) if (PUBLIC_HTTP_METHODS.includes(m)) n++;
+  return n;
+}
+
 export function mergeCollections(cols: { name: string; spec: any }[], title = "전체 API"): any {
   const paths: any = {};
   const folders = new Set<string>();

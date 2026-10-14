@@ -31,7 +31,7 @@ export function Builder() {
   const {
     spec, updateSpec, diagnostics, clipboard, copyRequest, copyFolder, pasteInto, cloneFolder, toggleIgnoreFolder,
     collections, activeCollectionId, setActiveCollection, addCollection, removeCollection,
-    environments, activeEnvId, setActiveEnv, setBuilderTab, requestRunFolder,
+    environments, activeEnvId, setActiveEnv, setBuilderTab, requestRunFolder, setAllPublic,
     openTabs, activeTab, openTab, closeTab, setActiveTab, closeAllTabs, closeOtherTabs, closeTabsToSide, projectDir, logEvent,
   } = useStore(
     useShallow((s) => ({
@@ -40,7 +40,7 @@ export function Builder() {
       collections: s.collections, activeCollectionId: s.activeCollectionId, setActiveCollection: s.setActiveCollection,
       addCollection: s.addCollection, removeCollection: s.removeCollection,
       environments: s.environments, activeEnvId: s.activeEnvId, setActiveEnv: s.setActiveEnv,
-      setBuilderTab: s.setBuilderTab, requestRunFolder: s.requestRunFolder,
+      setBuilderTab: s.setBuilderTab, requestRunFolder: s.requestRunFolder, setAllPublic: s.setAllPublic,
       openTabs: s.openTabs, activeTab: s.activeTab, openTab: s.openTab, closeTab: s.closeTab,
       setActiveTab: s.setActiveTab, closeAllTabs: s.closeAllTabs, closeOtherTabs: s.closeOtherTabs, closeTabsToSide: s.closeTabsToSide,
       projectDir: s.projectDir, logEvent: s.logEvent,
@@ -156,6 +156,9 @@ export function Builder() {
         { label: "＋ 새 요청", run: () => { sel(); setDialog({ kind: "newRequest", folder: "" }); } },
         { label: "이름 변경", run: () => { sel(); setDialog({ kind: "renameCollection", current: cspec?.info?.title ?? "" }); } },
         { label: "⚙ Pre/Post 스크립트", run: () => { sel(); setScriptEdit({ colId, scope: "collection" }); } },
+        // 외부 공개 일괄 토글(x-public). 요청별 체크는 Info 탭.
+        { label: "🌐 전체 외부 공개 허용", run: () => { sel(); setAllPublic(true); logEvent("Builder", `컬렉션 전체 외부 공개 · ${cspec?.info?.title ?? ""}`); } },
+        { label: "🔒 전체 비공개", run: () => { sel(); setAllPublic(false); logEvent("Builder", `컬렉션 전체 비공개 · ${cspec?.info?.title ?? ""}`); } },
       ];
       if (collections.length > 1) items.push({ label: "🗑 이 컬렉션 삭제", run: () => confirm("이 컬렉션을 삭제할까요?") && removeCollection(colId) });
       if (clipboard) items.push({ label: "📋 붙여넣기", run: () => { sel(); pasteInto(""); } });

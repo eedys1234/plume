@@ -761,6 +761,15 @@ export function RequestView({ path, method }: { path: string; method: string }) 
         {sub === "info" && (
           <div>
             <label>summary<input value={op.summary ?? ""} onChange={(e) => edit((o) => (o.summary = e.target.value))} /></label>
+            {/* 외부 공개 허용(x-public). 기본 비공개 — 체크한 요청만 Export '외부 공개용'에 포함. */}
+            <label className="row" style={{ gap: 8, alignItems: "center", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={op["x-public"] === true}
+                onChange={(e) => { const on = e.target.checked; edit((o) => { if (on) o["x-public"] = true; else delete o["x-public"]; }); }}
+              />
+              <span>🌐 외부 공개 허용 <span className="hint tiny">(Export ▸ 외부 공개용에 포함 · 기본 비공개)</span></span>
+            </label>
             <div className="sublabel">문서 (Docs · Markdown · 게시판식 서식)</div>
             <DocEditor
               value={op.description ?? ""}

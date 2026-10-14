@@ -260,6 +260,7 @@ export const CollectionTree = memo(function CollectionTree({
           >
             <span className={`m m-${method}`}>{method.toUpperCase()}</span>
             <span className="p">{op?.summary || path}</span>
+            {op?.["x-public"] === true && <span className="pubmark" title="외부 공개 허용">🌐</span>}
           </div>
           );
         })}

@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { api, type Spec } from "../ipc";
 import { pickSavePath, pickDirectory, pickOpenFile } from "../dialog";
-import { useStore, mergeCollections } from "../store";
+import { useStore, mergeCollections, filterPublicSpec, countOps } from "../store";
 import { useShallow } from "zustand/react/shallow";
 
 const HTTP_METHODS = ["get", "post", "put", "delete", "patch", "head", "options"];
@@ -205,14 +205,17 @@ export function ExportPanel() {
   const [colId, setColId] = useState<string>(activeCollectionId);
   const [preview, setPreview] = useState("");
   const [msg, setMsg] = useState("");
+  const [pubOnly, setPubOnly] = useState(false); // 🌐 외부 공개용: x-public 체크된 요청만
 
   // colId === "all" 이면 모든 컬렉션을 하나로 병합해 Export.
   const isAll = colId === "all";
   const col = collections.find((c) => c.id === colId) ?? collections.find((c) => c.id === activeCollectionId);
-  const spec = isAll ? mergeCollections(collections, "전체 API") : col?.spec;
-  const title = isAll
-    ? "all-collections"
-    : (spec?.info?.title || "openapi").replace(/[^\w.-]+/g, "-");
+  const baseSpec = isAll ? mergeCollections(collections, "전체 API") : col?.spec;
+  // 외부 공개용: x-public 체크된 요청만 남긴 스펙으로 내보낸다(기본 비공개).
+  const spec = pubOnly ? filterPublicSpec(baseSpec) : baseSpec;
+  const publicCount = pubOnly ? countOps(spec) : 0;
+  const title =
+    (isAll ? "all-collections" : (baseSpec?.info?.title || "openapi").replace(/[^\w.-]+/g, "-")) + (pubOnly ? "-public" : "");
 
   async function downloadOpenapi(kind: "yaml" | "json") {
     if (!spec) return;
@@ -258,6 +261,21 @@ export function ExportPanel() {
     }
   }
 
+  async function downloadMarkdown() {
+    if (!spec) return;
+    try {
+      const out = await api.specToMarkdown(spec, true, true);
+      setPreview(out);
+      const dest = await pickSavePath(`${title}.md`, "md");
+      if (!dest) return;
+      await api.writeTextFile(dest, out);
+      setMsg(`✓ Markdown 저장: ${dest}`);
+      logEvent("Export", `markdown · ${dest}`);
+    } catch (e: any) {
+      showAlert(`${e?.message ?? e}`, { title: "내보내기 실패", kind: "err" });
+    }
+  }
+
   async function downloadHtml() {
     if (!spec) return;
     try {
@@ -284,18 +302,25 @@ export function ExportPanel() {
               ))}
             </select>
           </div>
+          <div className="docmodetoggle" style={{ marginBottom: 8 }}>
+            <button type="button" className={pubOnly ? "" : "active"} onClick={() => setPubOnly(false)}>전체</button>
+            <button type="button" className={pubOnly ? "active" : ""} onClick={() => setPubOnly(true)} title="🌐 외부 공개 허용을 체크한 요청만 내보내기">🌐 외부 공개용</button>
+          </div>
           <p className="hint tiny">
-            {isAll
-              ? `전체 ${collections.length}개 컬렉션을 하나로 병합해 내보냅니다.`
-              : "대상 컬렉션을 선택하고 형식을 고르세요."}
+            {pubOnly
+              ? `🌐 외부 공개 허용으로 체크된 요청 ${publicCount}개만 내보냅니다(기본 비공개). 요청 Info 탭 또는 컬렉션 우클릭에서 체크하세요.`
+              : isAll
+                ? `전체 ${collections.length}개 컬렉션을 하나로 병합해 내보냅니다.`
+                : "대상 컬렉션을 선택하고 형식을 고르세요."}
             {" "}파일 다운로드는 저장 위치 선택 창이 뜨며 기본값은 다운로드 폴더입니다.
           </p>
           <div className="exportbtns">
-            <button onClick={() => downloadOpenapi("yaml")}><b>OpenAPI YAML</b><span>다운로드</span></button>
-            <button onClick={() => downloadOpenapi("json")}><b>OpenAPI JSON</b><span>다운로드</span></button>
-            <button onClick={downloadPostman}><b>Postman Collections</b><span>다운로드</span></button>
-            <button onClick={exportBruno}><b>Bruno Collections</b><span>폴더 선택 → 생성</span></button>
-            <button onClick={downloadHtml}><b>Redoc HTML</b><span>단일 파일 다운로드</span></button>
+            <button disabled={pubOnly && publicCount === 0} onClick={() => downloadOpenapi("yaml")}><b>OpenAPI YAML</b><span>다운로드</span></button>
+            <button disabled={pubOnly && publicCount === 0} onClick={() => downloadOpenapi("json")}><b>OpenAPI JSON</b><span>다운로드</span></button>
+            <button disabled={pubOnly && publicCount === 0} onClick={downloadMarkdown}><b>Markdown</b><span>.md 다운로드</span></button>
+            <button disabled={pubOnly && publicCount === 0} onClick={exportBruno}><b>Bruno Collections</b><span>폴더 선택 → 생성</span></button>
+            {!pubOnly && <button onClick={downloadPostman}><b>Postman Collections</b><span>다운로드</span></button>}
+            {!pubOnly && <button onClick={downloadHtml}><b>Redoc HTML</b><span>단일 파일 다운로드</span></button>}
           </div>
         </div>
 
